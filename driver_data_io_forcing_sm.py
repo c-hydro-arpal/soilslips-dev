@@ -3,8 +3,8 @@ Class Features
 
 Name:          driver_data_io_forcing_sm
 Author(s):     Fabio Delogu (fabio.delogu@cimafoundation.org)
-Date:          '20200515'
-Version:       '1.0.0'
+Date:          '202200502'
+Version:       '1.5.0'
 """
 
 ######################################################################################
@@ -14,12 +14,20 @@ import os
 import numpy as np
 import pandas as pd
 
-from lib_utils_generic import get_dict_nested_value, find_maximum_delta, split_time_parts
-from lib_utils_geo import get_file_raster, convert_cn2s
-from lib_utils_io import read_file_json, read_file_csv, read_file_binary, \
-    read_obj, write_obj, create_darray_2d, create_dset, write_dset, unzip_filename
+from lib_utils_data_grid_sm import get_data_nc, get_data_binary, \
+    reproject_sm_source2map, merge_sm_list2map, save_data_tiff, save_data_nc
+from lib_utils_data_table import read_table_obj, select_table_obj
+
+from lib_utils_system import unzip_filename
+from lib_utils_time import search_time_features
+from lib_utils_io_obj import filter_obj_variables, filter_obj_datasets, create_dset
+
 from lib_utils_system import fill_tags2string, make_folder, change_extension
-from lib_utils_tiff import save_file_tiff
+
+from lib_info_args import logger_name_scenarios as logger_name
+
+# Logging
+log_stream = logging.getLogger(logger_name)
 
 # Debug
 import matplotlib.pylab as plt
@@ -32,73 +40,83 @@ class DriverForcing:
 
     # -------------------------------------------------------------------------------------
     # Initialize class
-    def __init__(self, time_step, src_dict, ancillary_dict, dst_dict,
+    def __init__(self, time_step, src_dict, anc_dict, dst_dict=None, tmp_dict=None,
                  alg_ancillary=None, alg_template_tags=None,
-                 time_data=None, basin_data=None, geo_data=None, group_data=None,
-                 flag_forcing_data='soil_moisture_data',
+                 time_data=None, table_data='table_variables.json',
+                 collections_data_group=None, collections_data_geo=None,
+                 flag_data_src='soil_moisture_data',
                  flag_ancillary_updating=True):
 
         self.time_step = pd.Timestamp(time_step)
 
-        self.flag_forcing_data = flag_forcing_data
-        self.file_name_tag = 'file_name'
-        self.folder_name_tag = 'folder_name'
+        self.flag_data_src = flag_data_src
+
+        self.obj_file_name_tag = 'file_name'
+        self.obj_folder_name_tag = 'folder_name'
+        self.obj_type_tag = 'obj_type'
+        self.obj_geo_reference_tag = 'obj_geo_reference'
+
+        self.reference_tag = 'reference'
+        self.region_tag = 'region'
+        self.alert_area_tag = 'alert_area'
+        self.region_pivot_name_primary = 'region:primary_data:soil_moisture_data'
+        self.region_pivot_name_index = 'region:index_data:soil_moisture_data'
+        self.alert_area_pivot_name_mask = 'alert_area:mask_data:{:}'
+        self.catchment_tag = 'catchment'
+        self.catchment_pivot_name_terrain = 'catchment:primary_data:terrain_data'
+        self.catchment_pivot_name_cn = 'catchment:primary_data:cn_data'
+        self.catchment_pivot_name_cnet = 'catchment:primary_data:channels_network_data'
 
         self.alg_template_tags = alg_template_tags
 
-        self.file_data_basin = basin_data
-        self.file_data_geo = geo_data
+        # select geo datasets
+        self.data_group = collections_data_group
+        self.data_geo_reference_grid = collections_data_geo[self.reference_tag]['reference']
+        self.data_geo_region_grid = collections_data_geo[self.region_tag][self.region_pivot_name_primary]
+        self.data_geo_region_index = collections_data_geo[self.region_tag][self.region_pivot_name_index]
+        self.data_geo_catchment_terrain = collections_data_geo[self.catchment_tag][self.catchment_pivot_name_terrain]
+        self.data_geo_catchment_cn = collections_data_geo[self.catchment_tag][self.catchment_pivot_name_cn]
+        self.data_geo_catchment_cnet = collections_data_geo[self.catchment_tag][self.catchment_pivot_name_cnet]
 
-        self.structure_data_group = group_data
+        data_vars_alert_area_mask = filter_obj_variables(
+            list(collections_data_geo[self.alert_area_tag].keys()), self.alert_area_pivot_name_mask)
+        self.data_geo_alert_area_mask = filter_obj_datasets(collections_data_geo[self.alert_area_tag],
+                                                            data_vars_alert_area_mask)
 
-        search_period_list = []
-        search_type_list = []
-        for group_name, group_fields in self.structure_data_group.items():
-            period_tmp = get_dict_nested_value(group_fields, ["sm_datasets", "search_period"])
-            type_tmp = get_dict_nested_value(group_fields, ["sm_datasets", "search_type"])
-            search_period_list.extend(period_tmp)
-            search_type_list.extend(type_tmp)
-        search_period_list = list(set(search_period_list))
-        search_type_list = list(set(search_type_list))
-
-        self.search_delta_max = find_maximum_delta(search_period_list)
-        self.search_period_max, self.search_frequency_max = split_time_parts(self.search_delta_max)
-        if search_type_list.__len__() > 1:
-            logging.error(' ===> SearchType is not unique.')
-            raise NotImplementedError('Case not allowed.')
-        else:
-            self.search_period_type = search_type_list[0]
-
-        self.time_data = time_data[self.flag_forcing_data]
+        # time object(s)
+        self.time_data = time_data[self.flag_data_src]
+        self.time_period_max, self.time_frequency_max, self.time_period_type = search_time_features(
+            self.data_group, data_key='sm_datasets')
         self.time_range = self.collect_file_time()
 
-        self.file_name_src_raw = src_dict[self.flag_forcing_data][self.file_name_tag]
-        self.folder_name_src_raw = src_dict[self.flag_forcing_data][self.folder_name_tag]
+        # source object(s)
+        self.type_src = src_dict[self.flag_data_src][self.obj_type_tag]
+        self.table_src = select_table_obj(read_table_obj(table_data), ['source', self.flag_data_src, self.type_src])
+        self.geo_reference_src = src_dict[self.flag_data_src][self.obj_geo_reference_tag]
 
-        self.file_path_src_list = self.collect_file_list(
-            self.folder_name_src_raw, self.file_name_src_raw)
+        self.file_name_src_raw = src_dict[self.flag_data_src][self.obj_file_name_tag]
+        self.folder_name_src_raw = src_dict[self.flag_data_src][self.obj_folder_name_tag]
+        self.file_path_src_list = self.collect_file_list(self.folder_name_src_raw, self.file_name_src_raw)
 
-        self.file_name_ancillary_raw = ancillary_dict[self.flag_forcing_data][self.file_name_tag]
-        self.folder_name_ancillary_raw = ancillary_dict[self.flag_forcing_data][self.folder_name_tag]
+        # ancillary object(s)
+        self.file_name_anc_raw = anc_dict[self.flag_data_src][self.obj_file_name_tag]
+        self.folder_name_anc_raw = anc_dict[self.flag_data_src][self.obj_folder_name_tag]
+        self.file_path_anc_list = self.collect_file_list(self.folder_name_anc_raw, self.file_name_anc_raw)
 
-        self.file_path_ancillary_list = self.collect_file_list(
-            self.folder_name_ancillary_raw, self.file_name_ancillary_raw)
-
-        self.file_extension_zip = '.gz'
-        self.file_extension_unzip = '.bin'
-
-        self.var_name_terrain = 'terrain'
-        self.var_name_curve_number = 'cn'
-        self.var_name_channels_network = 'channels_network'
-        self.var_name_x = 'west_east'
-        self.var_name_y = 'south_north'
+        # tmp object(s)
+        self.folder_name_tmp_raw = tmp_dict[self.obj_folder_name_tag]
+        self.file_name_tmp_raw = tmp_dict[self.obj_file_name_tag]
 
         self.flag_ancillary_updating = flag_ancillary_updating
 
-        self.file_metadata = {'description': 'soil_moisture'}
-        self.file_epsg_code = 'EPSG:4326'
+        self.file_extension_zip = self.table_src['file_extension_zip']
+        self.file_extension_unzip = self.table_src['file_extension_unzip']
+
+        self.var_name_x = 'west_east'
+        self.var_name_y = 'south_north'
 
         self.file_path_processed = []
+
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
@@ -109,18 +127,19 @@ class DriverForcing:
         time_frequency = self.time_data["time_frequency"]
         time_rounding = self.time_data["time_rounding"]
 
-        if time_period < self.search_period_max:
-            logging.warning(' ===> TimePeriod is less then SearchPeriodMax. Set TimePeriod == SearchPeriodMax')
-            time_period = self.search_period_max
-        if time_frequency != self.search_frequency_max:
-            logging.error(' ===> TimeFrequency is not equal to SearchFrequencyMax.')
-            raise NotImplementedError('Case not allowed.')
+        if time_period < self.time_period_max:
+            log_stream.warning(' ===> Obj "time_period" is less then "time_period_max". '
+                               'Set "time_period" == "time_period_max"')
+            time_period = self.time_period_max
+        if time_frequency != self.time_frequency_max:
+            log_stream.error(' ===> Obj "time_frequency" is not equal to "time_frequency_max".')
+            raise NotImplementedError('Case not implemented yet')
 
         time_step = self.time_step.floor(time_rounding)
         time_start_left = pd.date_range(start=time_step, periods=2, freq=time_frequency)[1]
         time_end_right = time_step
 
-        search_type = self.search_period_type
+        search_type = self.time_period_type
         if search_type == 'left':
             time_range = pd.date_range(start=time_start_left, periods=time_period, freq=time_frequency)
         elif search_type == 'right':
@@ -130,8 +149,8 @@ class DriverForcing:
             time_range_right = pd.date_range(end=time_end_right, periods=time_period, freq=time_frequency)
             time_range = time_range_right.union(time_range_left)
         else:
-            logging.error(' ===> SearchType selection is wrong')
-            raise NotImplementedError('Case not allowed.')
+            log_stream.error(' ===> Obj "search_type" for "time_range" selection is not allowed')
+            raise RuntimeError('Obj "search_type" must be equal to "left", "right" or "both"')
 
         return time_range
     # -------------------------------------------------------------------------------------
@@ -140,7 +159,7 @@ class DriverForcing:
     # Method to collect ancillary file
     def collect_file_list(self, folder_name_raw, file_name_raw):
 
-        data_group = self.structure_data_group
+        data_group = self.data_group
         data_time = self.time_range
 
         file_name_obj = {}
@@ -148,8 +167,8 @@ class DriverForcing:
 
             file_name_obj[group_key] = {}
 
-            group_basins = group_data['basin']
-            for basin_name in group_basins:
+            group_catchment = group_data['catchment']
+            for catchment_name in group_catchment:
 
                 file_name_list = []
                 for time_step in data_time:
@@ -158,19 +177,22 @@ class DriverForcing:
                                                 'source_sm_datetime': time_step,
                                                 'ancillary_sm_sub_path_time': time_step,
                                                 'ancillary_sm_datetime': time_step,
-                                                'basin_name': basin_name,
+                                                'catchment_name': catchment_name,
                                                 'alert_area_name': group_key}
 
                     folder_name_def = fill_tags2string(
                         folder_name_raw, self.alg_template_tags, alg_template_values_step)
-                    file_name_def = fill_tags2string(
-                        file_name_raw, self.alg_template_tags, alg_template_values_step)
-                    file_path_def = os.path.join(folder_name_def, file_name_def)
+                    if file_name_raw is not None:
+                        file_name_def = fill_tags2string(
+                            file_name_raw, self.alg_template_tags, alg_template_values_step)
+                        file_path_def = os.path.join(folder_name_def, file_name_def)
+                    else:
+                        file_path_def = folder_name_def
 
                     file_name_list.append(file_path_def)
 
-                file_name_obj[group_key][basin_name] = {}
-                file_name_obj[group_key][basin_name] = file_name_list
+                file_name_obj[catchment_name] = {}
+                file_name_obj[catchment_name] = file_name_list
 
         return file_name_obj
 
@@ -178,154 +200,150 @@ class DriverForcing:
 
     # -------------------------------------------------------------------------------------
     # Method to organize forcing
-    def organize_forcing(self, var_name='soil_moisture'):
+    def organize_forcing(self, var_name='soil_moisture', var_min=0, var_max=1):
 
-        logging.info(' ----> Organize soil moisture forcing ... ')
+        log_stream.info(' ----> Organize soil moisture forcing ... ')
 
         time_range = self.time_range
+        type_src = self.type_src
 
-        file_data_geo = self.file_data_geo
-        file_data_basin = self.file_data_basin
+        data_group = self.data_group
+        data_geo_alert_area_mask = self.data_geo_alert_area_mask
+        data_geo_catchment_terrain = self.data_geo_catchment_terrain
+        data_geo_catchment_cn = self.data_geo_catchment_cn
+        data_geo_catchment_cnet = self.data_geo_catchment_cnet
+
         file_path_src_list = self.file_path_src_list
-        file_path_ancillary_list = self.file_path_ancillary_list
+        file_path_anc_list = self.file_path_anc_list
 
-        for (group_key_basin, group_basin), (group_key_geo, group_geo), group_file, group_ancillary in zip(
-                file_data_basin.items(), file_data_geo.items(),
-                file_path_src_list.values(), file_path_ancillary_list.values()):
+        for group_key, group_fields in data_group.items():
 
-            logging.info(' -----> Alert Area ' + group_key_basin + ' ... ')
+            log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... ')
 
-            basin_list = list(group_basin.keys())
+            # create the reference geographical name
+            name_key = self.alert_area_pivot_name_mask.format(group_key)
 
-            geo_mask_ref = group_geo
-            geo_x_ref = group_geo['west_east']
-            geo_y_ref = group_geo['south_north']
+            # get the reference geographical datasets
+            data_geo_reference_grid = data_geo_alert_area_mask[name_key]
 
-            basin_collections = {}
-            file_ancillary_collections = {}
+            da_geo_y_ref = data_geo_reference_grid['south_north']
+            da_geo_x_ref = data_geo_reference_grid['west_east']
+            da_mask_ref_2d = data_geo_reference_grid
 
-            if basin_list:
-                for basin_name in basin_list:
+            catchment_list = group_fields['catchment']
 
-                    logging.info(' ------> BasinName ' + basin_name + ' ... ')
+            data_anc_collections, file_anc_collections = {}, {}
+            if catchment_list:
+                for catchment_name in catchment_list:
 
-                    file_basin_geo = group_basin[basin_name]
-                    file_basin_list = group_file[basin_name]
-                    file_ancillary_list = group_ancillary[basin_name]
+                    log_stream.info(' ------> Catchment "' + catchment_name + '" ... ')
 
-                    for time_step, file_basin_step, file_ancillary_step in zip(time_range,
-                                                                               file_basin_list, file_ancillary_list):
+                    catchment_geo_terrain = data_geo_catchment_terrain[catchment_name]
+                    catchment_geo_cn = data_geo_catchment_cn[catchment_name]
+                    catchment_geo_cnet = data_geo_catchment_cnet[catchment_name]
 
-                        logging.info(' -------> TimeStep: ' + str(time_step) + ' ... ')
+                    file_src_list = file_path_src_list[catchment_name]
+                    file_anc_list = file_path_anc_list[catchment_name]
+
+                    for time_step, file_src_step, file_anc_step in zip(time_range, file_src_list, file_anc_list):
+
+                        log_stream.info(' -------> Time "' + str(time_step) + '" ... ')
 
                         if self.flag_ancillary_updating:
-                            if os.path.exists(file_ancillary_step):
-                                os.remove(file_ancillary_step)
+                            if os.path.exists(file_anc_step):
+                                os.remove(file_anc_step)
 
-                        if not os.path.exists(file_ancillary_step):
+                        if not os.path.exists(file_anc_step):
 
-                            if file_basin_step.endswith(self.file_extension_zip):
-                                file_basin_out = change_extension(file_basin_step, self.file_extension_unzip)
-                            else:
-                                file_basin_out = file_basin_step
+                            if os.path.exists(file_src_step):
 
-                            if os.path.exists(file_basin_step):
-                                unzip_filename(file_basin_step, file_basin_out)
-
-                                data_vtot = read_file_binary(
-                                    file_basin_out,
-                                    data_geo=file_basin_geo[self.var_name_terrain].values)
-
-                                data_vmax = convert_cn2s(
-                                    file_basin_geo[self.var_name_curve_number].values,
-                                    file_basin_geo[self.var_name_terrain].values)
-
-                                data_sm = data_vtot / data_vmax
-                                data_sm[file_basin_geo[self.var_name_channels_network].values == 1] = -1
-
-                                da_sm_base = create_darray_2d(data_sm,
-                                                              file_basin_geo[self.var_name_x], file_basin_geo[self.var_name_y],
-                                                              coord_name_x='west_east', coord_name_y='south_north',
-                                                              dim_name_x='west_east', dim_name_y='south_north')
-
-                                da_sm_interp = da_sm_base.interp(south_north=geo_y_ref, west_east=geo_x_ref, method='nearest')
-
-                                if time_step not in list(basin_collections.keys()):
-                                    basin_collections[time_step] = [da_sm_interp]
-                                    file_ancillary_collections[time_step] = [file_ancillary_step]
+                                if file_src_step.endswith(self.file_extension_zip):
+                                    file_tmp_step = change_extension(file_src_step, self.file_extension_unzip)
+                                    unzip_filename(file_src_step, file_tmp_step)
                                 else:
-                                    data_tmp = basin_collections[time_step]
+                                    file_tmp_step = file_src_step
+
+                                if file_tmp_step.endswith('.bin'):
+
+                                    da_sm_base = get_data_binary(
+                                        file_tmp_step, da_geo=catchment_geo_terrain,
+                                        da_cn=catchment_geo_cn, da_cnet=catchment_geo_cnet,
+                                        value_sm_min=var_min, value_sm_max=var_max)
+
+                                elif file_tmp_step.endswith('.nc'):
+
+                                    da_sm_base = get_data_nc(
+                                        file_tmp_step, da_geo=catchment_geo_terrain,
+                                        da_cn=catchment_geo_cn, da_cnet=catchment_geo_cnet,
+                                        value_sm_min=var_min, value_sm_max=var_max)
+
+                                else:
+                                    log_stream.error(
+                                        ' ===> Source data format is not supported. Check your source datasets')
+                                    raise NotImplementedError('Only "binary" or "nc" formats are available.')
+
+                                # Interpolate data source to destination
+                                da_sm_interp = reproject_sm_source2map(
+                                    da_sm_base,
+                                    da_mask_out=da_mask_ref_2d, da_geo_x_out=da_geo_x_ref, da_geo_y_out=da_geo_y_ref,
+                                    mask_out_condition=True)
+
+                                if time_step not in list(data_anc_collections.keys()):
+                                    data_anc_collections[time_step] = [da_sm_interp]
+                                    file_anc_collections[time_step] = [file_anc_step]
+                                else:
+                                    data_tmp = data_anc_collections[time_step]
                                     data_tmp.append(da_sm_interp)
-                                    basin_collections[time_step] = data_tmp
+                                    data_anc_collections[time_step] = data_tmp
 
-                                    file_tmp = file_ancillary_collections[time_step]
-                                    file_tmp.append(file_ancillary_step)
+                                    file_tmp = file_anc_collections[time_step]
+                                    file_tmp.append(file_anc_step)
                                     file_tmp = list(set(file_tmp))
-                                    file_ancillary_collections[time_step] = file_tmp
+                                    file_anc_collections[time_step] = file_tmp
 
-                                logging.info(' -------> TimeStep: ' + str(time_step) + ' ... DONE')
+                                log_stream.info(' -------> Time "' + str(time_step) + '" ... DONE')
                             else:
-                                logging.info(' -------> TimeStep: ' + str(time_step) + ' ... FAILED')
-                                logging.warning(' ==> File: ' + file_basin_step + ' does not exist')
+                                log_stream.info(' -------> Time "' + str(time_step) + '" ... FAILED')
+                                log_stream.warning(' ===> File: "' + file_src_step + '" does not exist')
 
                         else:
-                            logging.info(' -------> TimeStep: ' + str(time_step) + ' ... PREVIOUSLY DONE')
+                            log_stream.info(' -------> Time "' + str(time_step) + '" ... PREVIOUSLY DONE')
 
-                    logging.info(' ------> BasinName ' + basin_name + ' ... DONE')
+                    log_stream.info(' ------> Catchment "' + catchment_name + '" ... DONE')
 
-                logging.info(' -----> Alert Area ' + group_key_basin + ' ... DONE')
+                log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... DONE')
 
             else:
-                logging.info(' -----> Alert Area ' + group_key_basin + ' ... SKIPPED')
-                logging.warning(' ==> Datasets are not defined')
+                log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... SKIPPED')
+                log_stream.warning(' ===> Datasets are not defined')
 
-            logging.info(' -----> Compose grid datasets from basins to alert area domain ... ')
-            for (time_step, data_list), file_path_ancillary in zip(
-                    basin_collections.items(), file_ancillary_collections.values()):
+            log_stream.info(' -----> Compose datasets for reference area "' + group_key + '" ... ')
+            for (time_step, da_data_list), file_path_anc in zip(
+                    data_anc_collections.items(), file_anc_collections.values()):
 
-                logging.info(' ------> TimeStep: ' + str(time_step) + ' ... ')
+                log_stream.info(' ------> Time "' + str(time_step) + '" ... ')
 
-                if isinstance(file_path_ancillary, list) and file_path_ancillary.__len__() == 1:
-                    file_path_ancillary = file_path_ancillary[0]
+                if isinstance(file_path_anc, list) and file_path_anc.__len__() == 1:
+                    file_path_anc = file_path_anc[0]
                 else:
-                    logging.error(' ===> Soil moisture ancillary file are not correctly defined.')
+                    log_stream.error(' ===> Soil moisture ancillary file are not correctly defined.')
                     raise IOError('Ancillary file is not unique')
 
                 if self.flag_ancillary_updating:
-                    if os.path.exists(file_path_ancillary):
-                        os.remove(file_path_ancillary)
+                    if os.path.exists(file_path_anc):
+                        os.remove(file_path_anc)
 
-                if not os.path.exists(file_path_ancillary):
+                if not os.path.exists(file_path_anc):
 
-                    logging.info(' -------> Merge grid datasets ... ')
-                    array_merge = np.zeros([geo_mask_ref.values.shape[0] * geo_mask_ref.values.shape[1]])
-                    array_merge[:] = np.nan
+                    log_stream.info(' -------> Merge grid datasets ... ')
+                    grid_merge = merge_sm_list2map(da_data_list, da_mask_ref_2d)
+                    log_stream.info(' -------> Merge grid datasets ... DONE')
 
-                    for data_step in data_list:
-
-                        array_values = data_step.values.ravel()
-                        idx_finite = np.isfinite(array_values)
-
-                        array_merge[idx_finite] = array_values[idx_finite]
-
-                    grid_merge = np.reshape(array_merge, [geo_mask_ref.values.shape[0], geo_mask_ref.values.shape[1]])
-                    idx_choice = np.where(grid_merge == -1)
-
-                    grid_merge[idx_choice[0], idx_choice[1]] = np.nan
-
-                    idx_filter = np.where((geo_mask_ref.values == 1) & (np.isnan(grid_merge)))
-                    grid_merge[idx_filter[0], idx_filter[1]] = np.nanmean(grid_merge)
-                    grid_merge[(geo_mask_ref.values == 0)] = np.nan
-
-                    grid_merge[idx_choice[0], idx_choice[1]] = np.nan
-
-                    logging.info(' -------> Merge grid datasets ... DONE')
-
-                    logging.info(' -------> Save grid datasets ... ')
+                    log_stream.info(' -------> Save grid datasets ... ')
 
                     dset_merge = create_dset(
                         grid_merge,
-                        geo_mask_ref.values, geo_x_ref.values, geo_y_ref.values,
+                        da_mask_ref_2d.values, da_geo_x_ref.values, da_geo_y_ref.values,
                         var_data_time=time_step,
                         var_data_name=var_name,
                         var_geo_name='mask', var_data_attrs=None, var_geo_attrs=None,
@@ -333,44 +351,52 @@ class DriverForcing:
                         dim_name_x='west_east', dim_name_y='south_north', dim_name_time='time',
                         dims_order_2d=None, dims_order_3d=None)
 
-                    folder_name_ancillary, file_name_ancillary = os.path.split(file_path_ancillary)
-                    make_folder(folder_name_ancillary)
+                    # Debug
+                    # plt.figure()
+                    # values_merged = dset_merge[var_name].values
+                    # plt.imshow(values_merged)
+                    # plt.colorbar()
+                    # plt.show()
 
-                    if file_path_ancillary.endswith('.nc'):
+                    folder_name_anc, file_name_anc = os.path.split(file_path_anc)
+                    make_folder(folder_name_anc)
 
-                        write_dset(
-                            file_path_ancillary,
-                            dset_merge, dset_mode='w', dset_engine='h5netcdf', dset_compression=0, dset_format='NETCDF4',
-                            dim_key_time='time', no_data=-9999.0)
+                    if file_path_anc.endswith('.nc'):
 
-                        logging.info(' ------> Save grid datasets ... DONE. [NETCDF]')
+                        save_data_nc(file_name_anc, dset_merge)
 
-                    elif file_path_ancillary.endswith('.tiff'):
+                        log_stream.info(' -------> Save grid datasets ... DONE. [NETCDF]')
 
-                        save_file_tiff(file_path_ancillary,
-                                       np.flipud(dset_merge[var_name].values),
-                                       geo_x_ref.values, np.flipud(geo_y_ref.values),
-                                       file_metadata=self.file_metadata, file_epsg_code=self.file_epsg_code)
+                    elif file_path_anc.endswith('.tiff'):
 
-                        logging.info(' ------> Save grid datasets ... DONE. [GEOTIFF]')
+                        map_out_2d = dset_merge[var_name].values
+
+                        geox_out_1d = da_geo_x_ref.values
+                        geoy_out_1d = da_geo_y_ref.values
+                        geox_out_2d, geoy_out_2d = np.meshgrid(geox_out_1d, geoy_out_1d)
+
+                        save_data_tiff(
+                            file_path_anc, map_out_2d, geox_out_2d, geoy_out_2d,
+                            file_metadata=self.table_src['file_metadata'],
+                            file_epsg_code=self.table_src['file_epsg_code'])
+
+                        log_stream.info(' -------> Save grid datasets ... DONE. [GEOTIFF]')
 
                     else:
-                        logging.info(' ------> Save grid datasets ... FAILED')
-                        logging.error(' ===> Filename format is not allowed')
+                        log_stream.info(' -------> Save grid datasets ... FAILED')
+                        log_stream.error(' ===> Filename format is not allowed')
                         raise NotImplementedError('Format is not implemented yet')
 
-                    self.file_path_processed.append(file_path_ancillary)
+                    self.file_path_processed.append(file_path_anc)
 
-                    logging.info(' -------> Save grid datasets ... DONE')
-
-                    logging.info(' ------> TimeStep: ' + str(time_step) + ' ... DONE')
+                    log_stream.info(' ------> Time "' + str(time_step) + '" ... DONE')
 
                 else:
-                    logging.info(' ------> TimeStep: ' + str(time_step) + ' ... PREVIOUSLY DONE')
+                    log_stream.info(' ------> Time "' + str(time_step) + '" ... PREVIOUSLY DONE')
 
-            logging.info(' -----> Compose grid datasets from basins to alert area domain ... DONE')
+            log_stream.info(' -----> Compose datasets for reference area "' + group_key + '" ... DONE')
 
-        logging.info(' ----> Organize soil moisture forcing ... DONE')
+        log_stream.info(' ----> Organize soil moisture forcing ... DONE')
 
     # -------------------------------------------------------------------------------------
 

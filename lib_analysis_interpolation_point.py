@@ -14,11 +14,16 @@ import tempfile
 import rasterio
 import os
 
-from numpy import zeros, min, max, reshape, flipud, savetxt, argwhere
+from numpy import zeros, min, max, flipud, savetxt
 
-from lib_utils_io import create_filename_tmp
+from lib_utils_system import create_filename_tmp
 from lib_utils_process import exec_process
 from lib_utils_system import random_string, make_folder
+
+from lib_info_args import logger_name_scenarios as logger_name
+
+# Logging
+log_stream = logging.getLogger(logger_name)
 
 # Debug
 # import matplotlib.pylab as plt
@@ -26,8 +31,8 @@ from lib_utils_system import random_string, make_folder
 
 
 # -------------------------------------------------------------------------------------
-# Method to interpolate point data to grid
-def interp_point2grid(data_in_1d, geox_in_1d, geoy_in_1d, geox_out_2d, geoy_out_2d, epsg_code='4326',
+# Method to interpolate point data to map
+def interp_point2map(data_in_1d, geox_in_1d, geoy_in_1d, geox_out_2d, geoy_out_2d, epsg_code='4326',
                       interp_no_data=-9999.0, interp_radius_x=None, interp_radius_y=None,
                       interp_method='nearest', interp_option=None,
                       folder_tmp=None, var_name_data='values', var_name_geox='x', var_name_geoy='y'):
@@ -90,6 +95,21 @@ def interp_point2grid(data_in_1d, geox_in_1d, geoy_in_1d, geox_out_2d, geoy_out_
                     interp_option + ' -outsize ' + str(geo_out_rows) + ' ' + str(geo_out_cols) +
                     ' -of GTiff -ot Float32 -l ' + var_name_layer + ' ' +
                     file_name_vrt + ' ' + file_name_tiff + ' --config GDAL_NUM_THREADS ALL_CPUS')
+    '''
+    ERRORS LIKE:
+    
+    ERROR 1: PROJ: proj_create_from_database: SQLite error on SELECT name, coordinate_system_auth_name, 
+        coordinate_system_code, geodetic_crs_auth_name, geodetic_crs_code, conversion_auth_name, conversion_code, 
+        area_of_use_auth_name, area_of_use_code, text_definition, deprecated FROM projected_crs 
+        WHERE auth_name = ? AND code = ?: no such column: area_of_use_auth_name
+    ERROR 1: Failed to process SRS definition: EPSG:32643,WGS84/UTM zone 43N
+    
+    Explanation here:
+    https://gis.stackexchange.com/questions/411287/python-gdal-grid-error-in-epsg
+    
+    In PyCharm add in sh launcher the PATH and LD_LIBRARY_PATH as defined in .bashrc to have the same libraries
+    loaded in the environment. Try with os.system(line_command) and then use exec_process if all is working
+    '''
     # os.system(line_command)
 
     # Execute algorithm

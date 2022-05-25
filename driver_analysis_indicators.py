@@ -16,14 +16,24 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from copy import deepcopy
-
-from lib_utils_generic import get_dict_nested_value, find_maximum_delta, split_time_parts
+from lib_data_io_pickle import write_obj
+from lib_utils_time import find_time_maximum_delta, split_time_window
 from lib_utils_system import fill_tags2string, make_folder
-from lib_utils_io import read_obj, write_obj, create_dset
-from lib_utils_tiff import read_file_tiff
+from lib_utils_io_obj import filter_obj_variables, filter_obj_datasets, create_dset
 
-from lib_analysis_interpolation_grid import interp_grid2map
+from lib_utils_data_point_soil_slips import select_point_by_time
+
+from lib_utils_data_grid_rain import reproject_rain_source2map, reproject_rain_map2ts, \
+    compute_rain_maps_accumulated, compute_rain_peaks, \
+    compute_rain_ts_averaged, compute_rain_ts_accumulated, compute_rain_statistics
+from lib_utils_data_grid_rain import get_data_tiff as get_data_tiff_rain
+from lib_utils_data_grid_sm import reproject_sm_map2ts, compute_sm_statistics
+from lib_utils_data_grid_sm import get_data_tiff as get_data_tiff_sm
+
+from lib_info_args import logger_name_scenarios as logger_name
+
+# Logging
+log_stream = logging.getLogger(logger_name)
 
 # Debug
 import matplotlib.pylab as plt
@@ -36,196 +46,147 @@ class DriverAnalysis:
 
     # -------------------------------------------------------------------------------------
     # Initialize class
-    def __init__(self, time_step, ancillary_dict, dst_dict,
-                 file_list_rain_map, file_list_rain_point, file_list_sm,
+    def __init__(self, time_step, anc_dict, dst_dict,
+                 file_list_rain, file_list_sm,
                  alg_ancillary=None, alg_template_tags=None,
                  time_data=None,
-                 geo_data_region=None,
-                 geo_data_alert_area=None, index_data_alert_area=None,
-                 geo_data_weather_station=None,
-                 group_data=None,
-                 flag_forcing_data_rain='rain_data',
-                 flag_ancillary_data_rain_map='rain_data_map', flag_ancillary_data_rain_point='rain_data_point',
-                 flag_forcing_data_sm='soil_moisture_data', flag_ancillary_data_sm='soil_moisture_data',
-                 flag_indicators_domain='alert_area', flag_indicators_time='time',
-                 flag_indicators_event='indicators_event', flag_indicators_data='indicators_data',
-                 flag_dest_updating=True):
+                 collections_data_geo_grid=None,
+                 collections_data_geo_pnt=None,
+                 collections_data_group=None,
+                 flag_time_rain='rain_data',
+                 flag_time_soil_moisture='soil_moisture_data',
+                 flag_data_anc_rain='rain_data', flag_data_anc_sm='soil_moisture_data',
+                 flag_data_dst_indicators='indicators_data',
+                 flag_dst_updating=True):
 
         self.time_step = pd.Timestamp(time_step)
 
-        self.ancillary_dict = ancillary_dict
+        self.anc_dict = anc_dict
         self.dst_dict = dst_dict
 
         self.file_name_tag = 'file_name'
         self.folder_name_tag = 'folder_name'
+
+        self.reference_tag = 'reference'
         self.region_tag = 'region'
+        self.alert_area_tag = 'alert_area'
 
-        self.flag_forcing_data_rain = flag_forcing_data_rain
-        self.flag_ancillary_data_rain_map = flag_ancillary_data_rain_map
-        self.flag_ancillary_data_rain_point = flag_ancillary_data_rain_point
-        self.flag_forcing_data_sm = flag_forcing_data_sm
-        self.flag_ancillary_data_sm = flag_ancillary_data_sm
+        self.region_pivot_name_primary = 'region:primary_data:rain_data'
+        self.region_pivot_name_index = 'region:index_data:rain_data'
+        self.alert_area_pivot_name_mask = 'alert_area:mask_data:{:}'
+        self.alert_area_pivot_name_idx_grid = 'alert_area:index_grid_data:{:}'
+        self.alert_area_pivot_name_idx_circle = 'alert_area:index_circle_data:{:}'
 
-        self.flag_indicators_domain = flag_indicators_domain
-        self.flag_indicators_time = flag_indicators_time
-        self.flag_indicators_event = flag_indicators_event
-        self.flag_indicators_data = flag_indicators_data
+        self.flag_time_rain = flag_time_rain
+        self.flag_time_soil_moisture = flag_time_soil_moisture
 
-        self.file_list_rain_map = file_list_rain_map
-        self.file_list_rain_point = file_list_rain_point
+        self.flag_data_anc_rain = flag_data_anc_rain
+        self.flag_data_anc_sm = flag_data_anc_sm
+
+        self.flag_data_dst_indicators = flag_data_dst_indicators
+
+        self.file_list_rain = file_list_rain
         self.file_list_sm = file_list_sm
 
-        self.geo_data_region = geo_data_region[self.region_tag]
-        self.geo_data_alert_area = geo_data_alert_area
-        self.index_data_alert_area = index_data_alert_area
-        self.geo_data_weather_station = geo_data_weather_station
+        self.data_group = collections_data_group
+        self.data_geo_reference_grid = collections_data_geo_grid[self.reference_tag]['reference']
+        self.data_geo_region_grid = collections_data_geo_grid[self.region_tag][self.region_pivot_name_primary]
+        self.data_geo_region_index = collections_data_geo_grid[self.region_tag][self.region_pivot_name_index]
+        self.data_geo_pnt = collections_data_geo_pnt
+
+        data_vars_alert_area_mask = filter_obj_variables(
+            list(collections_data_geo_grid[self.alert_area_tag].keys()), self.alert_area_pivot_name_mask)
+        self.data_geo_alert_area_mask = filter_obj_datasets(
+            collections_data_geo_grid[self.alert_area_tag], data_vars_alert_area_mask)
+        data_vars_alert_area_idx_grid = filter_obj_variables(
+            list(collections_data_geo_grid[self.alert_area_tag].keys()), self.alert_area_pivot_name_idx_grid)
+        self.data_geo_alert_area_idx_grid = filter_obj_datasets(
+            collections_data_geo_grid[self.alert_area_tag], data_vars_alert_area_idx_grid)
+        data_vars_alert_area_idx_circle = filter_obj_variables(
+            list(collections_data_geo_grid[self.alert_area_tag].keys()), self.alert_area_pivot_name_idx_circle)
+        self.data_geo_alert_area_idx_circle = filter_obj_datasets(
+            collections_data_geo_grid[self.alert_area_tag], data_vars_alert_area_idx_circle)
 
         self.alg_template_tags = alg_template_tags
 
-        self.time_data_rain = time_data[self.flag_forcing_data_rain]
-        self.time_data_sm = time_data[self.flag_forcing_data_sm]
+        self.time_data_rain = time_data[self.flag_time_rain]
+        self.time_data_sm = time_data[self.flag_time_soil_moisture]
 
         self.var_name_x = 'west_east'
         self.var_name_y = 'south_north'
 
-        self.structure_data_group = group_data
+        self.file_name_anc_rain_raw = anc_dict[self.flag_data_anc_rain][self.file_name_tag]
+        self.folder_name_anc_rain_raw = anc_dict[self.flag_data_anc_rain][self.folder_name_tag]
+        self.file_name_anc_sm_raw = anc_dict[self.flag_data_anc_sm][self.file_name_tag]
+        self.folder_name_anc_sm_raw = anc_dict[self.flag_data_anc_sm][self.folder_name_tag]
 
-        self.file_name_ancillary_rain_map_raw = ancillary_dict[self.flag_ancillary_data_rain_map][self.file_name_tag]
-        self.folder_name_ancillary_rain_map_raw = ancillary_dict[self.flag_ancillary_data_rain_map][self.folder_name_tag]
-        self.file_name_ancillary_rain_point_raw = ancillary_dict[self.flag_ancillary_data_rain_point][self.file_name_tag]
-        self.folder_name_ancillary_rain_point_raw = ancillary_dict[self.flag_ancillary_data_rain_point][self.folder_name_tag]
-        self.file_name_ancillary_sm_raw = ancillary_dict[self.flag_ancillary_data_sm][self.file_name_tag]
-        self.folder_name_ancillary_sm_raw = ancillary_dict[self.flag_ancillary_data_sm][self.folder_name_tag]
+        self.file_name_dst_indicators_raw = dst_dict[self.flag_data_dst_indicators][self.file_name_tag]
+        self.folder_name_dst_indicators_raw = dst_dict[self.flag_data_dst_indicators][self.folder_name_tag]
 
-        self.file_name_dest_indicators_raw = dst_dict[self.flag_indicators_data][self.file_name_tag]
-        self.folder_name_dest_indicators_raw = dst_dict[self.flag_indicators_data][self.folder_name_tag]
+        self.flag_dst_updating = flag_dst_updating
 
-        self.flag_dest_updating = flag_dest_updating
+        file_path_dst_indicators_expected = []
+        for group_key in self.data_group.keys():
 
-        file_path_dest_indicators_expected = []
-        for group_data_key in self.structure_data_group.keys():
+            file_path_dst_step = collect_file_list(
+                time_step, self.folder_name_dst_indicators_raw, self.file_name_dst_indicators_raw,
+                self.alg_template_tags, alert_area_name=group_key)[0]
 
-            file_path_dest_step = collect_file_list(
-                time_step, self.folder_name_dest_indicators_raw, self.file_name_dest_indicators_raw,
-                self.alg_template_tags, alert_area_name=group_data_key)[0]
+            if self.flag_dst_updating:
+                if os.path.exists(file_path_dst_step):
+                    os.remove(file_path_dst_step)
 
-            if self.flag_dest_updating:
-                if os.path.exists(file_path_dest_step):
-                    os.remove(file_path_dest_step)
+            file_path_dst_indicators_expected.append(file_path_dst_step)
 
-            file_path_dest_indicators_expected.append(file_path_dest_step)
+        self.file_path_dst_indicators_expected = file_path_dst_indicators_expected
 
-        self.file_path_dest_indicators_expected = file_path_dest_indicators_expected
+        self.template_struct_ts_datasets = 'time_series_datasets'
+        self.template_struct_ts_analysis = 'time_series_analysis'
+        self.template_struct_ts_peaks = 'time_series_peaks'
 
-        self.template_struct_ts = 'data_time_series'
-        self.template_struct_obj = 'data_obj'
-
-        self.template_rain_point_accumulated = 'rain_accumulated_{:}'
-        self.template_rain_point_avg = 'rain_average_{:}'
-        self.template_rain_point_peak = 'rain_peak_{:}'
+        self.template_rain_ts_accumulated = 'rain_accumulated_{:}'
+        self.template_rain_ts_avg = 'rain_average_{:}'
+        self.template_rain_ts_peak = 'rain_peak_{:}'
 
         self.template_sm_point_first = 'sm_value_first'
         self.template_sm_point_last = 'sm_value_last'
         self.template_sm_point_max = 'sm_value_max'
         self.template_sm_point_avg = 'sm_value_avg'
 
-        self.analysis_event_undefined = {'event_n': 0, 'event_threshold': 'white', 'event_index': 0}
+        self.template_indicators_domain = 'domain'
+        self.template_indicators_time = 'time'
+        self.template_indicators_event = 'event'
+        self.template_indicators_data = 'data'
+
+        self.analysis_event_undefined = {'event_n': -9999, 'event_threshold': 'NA', 'event_index': -9999}
+        self.analysis_event_not_found = {'event_n': 0, 'event_threshold': 'white', 'event_index': 0}
 
         self.tag_sep = ':'
-    # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
-    # Method to dump analysis
-    def save_analysis(self, group_analysis_sm, group_analysis_rain_map, group_analysis_rain_point, group_soilslip):
 
-        logging.info(' ----> Save analysis [' + str(self.time_step) + '] ... ')
+    # -------------------------------------------------------------------------------------
+    # Method to define time range
+    @staticmethod
+    def compute_time_range(time, time_period_lenght=1, time_period_type='both', time_frequency='H'):
 
-        time_step = self.time_step
-        geo_data_alert_area = self.geo_data_alert_area
-        group_data_alert_area = self.structure_data_group
+        time_start_left = pd.date_range(start=time, periods=2, freq=time_frequency)[1]
+        time_end_right = time
 
-        for (group_data_key, group_data_items), geo_data_dframe in zip(group_data_alert_area.items(),
-                                                                       geo_data_alert_area.values()):
+        if time_period_type == 'left':
+            time_range = pd.date_range(start=time_start_left, periods=time_period_lenght, freq=time_frequency)
+        elif time_period_type == 'right':
+            time_range = pd.date_range(end=time_end_right, periods=time_period_lenght, freq=time_frequency)
+        elif time_period_type == 'both':
+            time_range_left = pd.date_range(start=time_start_left, periods=time_period_lenght, freq=time_frequency)
+            time_range_right = pd.date_range(end=time_end_right, periods=time_period_lenght, freq=time_frequency)
+            time_range = time_range_right.union(time_range_left)
+        else:
+            log_stream.error(' ===> Bad definition for time_period_type')
+            raise NotImplementedError('Case not allowed.')
 
-            logging.info(' -----> Alert Area ' + group_data_key + '  ... ')
+        return time_range
 
-            file_path_dest = collect_file_list(
-                time_step, self.folder_name_dest_indicators_raw, self.file_name_dest_indicators_raw,
-                self.alg_template_tags, alert_area_name=group_data_key)[0]
-
-            if not os.path.exists(file_path_dest):
-
-                group_soilslip_select = group_soilslip[group_data_key]
-
-                if group_analysis_sm[group_data_key] is not None:
-                    group_analysis_sm_select = group_analysis_sm[group_data_key][self.template_struct_obj]
-                else:
-                    group_analysis_sm_select = None
-                if group_analysis_rain_map[group_data_key] is not None:
-                    group_analysis_rain_map_select = group_analysis_rain_map[group_data_key][self.template_struct_obj]
-                else:
-                    group_analysis_rain_map_select = None
-                if group_analysis_rain_point[group_data_key] is not None:
-                    group_analysis_rain_point_select = group_analysis_rain_point[group_data_key]
-                else:
-                    group_analysis_rain_point_select = None
-
-                if group_analysis_sm_select is not None:
-                    if time_step in list(group_soilslip_select.index):
-                        soilslip_select = group_soilslip_select.loc[time_step.strftime('%Y-%m-%d 00:00:00')]
-                    else:
-                        soilslip_select = None
-                else:
-                    soilslip_select = None
-
-                if (group_analysis_sm_select is not None) and (
-                        (group_analysis_rain_map_select is not None) and (group_analysis_rain_point_select is not None)):
-                    analysis_sm = self.unpack_analysis(group_analysis_sm_select)
-                    analysis_rain_map = self.unpack_analysis(group_analysis_rain_map_select)
-                    analysis_rain_point = self.unpack_analysis(group_analysis_rain_point_select)
-                    analysis_data = {**analysis_sm, **analysis_rain_map, **analysis_rain_point}
-                else:
-                    analysis_data = None
-                    if (group_analysis_sm_select is None) and (
-                            (group_analysis_rain_map_select is not None) and (group_analysis_rain_point_select is not None)):
-                        logging.warning(' ===> SoilMoisture datasets is undefined')
-                    elif (group_analysis_rain_map_select is None) and (group_analysis_sm_select is not None):
-                        logging.warning(' ===> Rain map datasets is undefined')
-                    elif (group_analysis_rain_point_select is None) and (group_analysis_sm_select is not None):
-                        logging.warning(' ===> Rain point datasets is undefined')
-                    else:
-                        logging.warning(' ===> Rain and SoilMoisture datasets are undefined')
-
-                if soilslip_select is not None:
-                    analysis_event = self.unpack_analysis(soilslip_select,
-                                                          ['event_n', 'event_threshold', 'event_index'])
-                else:
-                    analysis_event = self.analysis_event_undefined
-                    logging.warning(' ===> SoilSlip datasets is null. No events reported')
-
-                if (analysis_data is not None) and (analysis_event is not None):
-
-                    analysis_obj = {
-                        self.flag_indicators_domain: group_data_key,
-                        self.flag_indicators_time: time_step,
-                        self.flag_indicators_data: analysis_data,
-                        self.flag_indicators_event: analysis_event}
-
-                    folder_name_dest, file_name_dest = os.path.split(file_path_dest)
-                    make_folder(folder_name_dest)
-
-                    write_obj(file_path_dest, analysis_obj)
-
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... DONE')
-
-                else:
-
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Some datasets are undefined')
-
-            else:
-                logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Analysis file created previously')
-
-        logging.info(' ----> Save analysis [' + str(self.time_step) + '] ... DONE')
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
@@ -265,48 +226,158 @@ class DriverAnalysis:
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
+    # Method to dump analysis
+    def save_analysis(self, group_analysis_sm, group_analysis_rain, group_soil_slips):
+
+        log_stream.info(' ----> Save analysis [' + str(self.time_step) + '] ... ')
+
+        time_step = self.time_step
+        group_data = self.data_group
+
+        for group_key, group_items in group_data.items():
+
+            log_stream.info(' -----> Save datasets for reference area "' + group_key + '" ... ')
+
+            file_path_dst = collect_file_list(
+                time_step, self.folder_name_dst_indicators_raw, self.file_name_dst_indicators_raw,
+                self.alg_template_tags, alert_area_name=group_key)[0]
+
+            if not os.path.exists(file_path_dst):
+
+                if group_analysis_sm[group_key] is not None:
+                    group_analysis_sm_select = group_analysis_sm[group_key][self.template_struct_ts_analysis]
+                else:
+                    group_analysis_sm_select = None
+
+                if group_analysis_rain[group_key] is not None:
+                    group_analysis_rain_select = group_analysis_rain[group_key][self.template_struct_ts_analysis]
+                else:
+                    group_analysis_rain_select = None
+
+                if group_analysis_sm_select is not None:
+                    group_soil_slips_select, \
+                        time_soil_slips_select_from, time_soil_slips_select_to = select_point_by_time(
+                            time_step, group_soil_slips[group_key])
+                else:
+                    group_soil_slips_select, time_soil_slips_select_from, time_soil_slips_select_to = None, None, None
+
+                if (group_analysis_sm_select is not None) and (group_analysis_rain_select is not None):
+                    analysis_sm = self.unpack_analysis(group_analysis_sm_select)
+                    analysis_rain = self.unpack_analysis(group_analysis_rain_select)
+                    analysis_data = {**analysis_sm, **analysis_rain}
+                else:
+                    analysis_data = None
+                    if (group_analysis_sm_select is None) and (group_analysis_rain_select is not None):
+                        log_stream.warning(' ===> "Soil moisture" datasets is undefined')
+                    elif (group_analysis_rain_select is None) and (group_analysis_sm_select is not None):
+                        log_stream.warning(' ===> "Rain" datasets is undefined')
+                    else:
+                        log_stream.warning(' ===> "Rain" and "Soil moisture" datasets are undefined')
+
+                if group_soil_slips_select is not None:
+                    analysis_event = self.unpack_analysis(group_soil_slips_select,
+                                                          ['event_n', 'event_threshold', 'event_index'])
+                else:
+                    if (time_soil_slips_select_from is not None) and (time_soil_slips_select_to is not None):
+                        if time_soil_slips_select_from <= time_step <= time_soil_slips_select_to:
+                            analysis_event = self.analysis_event_not_found
+                            log_stream.warning(' ===> Soil slips events are not selected for the analysis time step')
+                        else:
+                            analysis_event = self.analysis_event_undefined
+                            log_stream.warning(' ===> Soil slips events are not defined for the analysis time step')
+                    else:
+                        log_stream.warning(' ===> Soil slips events period do not include the analysis time step')
+                        analysis_event = self.analysis_event_undefined
+
+                if (analysis_data is not None) and (analysis_event is not None):
+
+                    analysis_obj = {
+                        self.template_indicators_domain: group_key,
+                        self.template_indicators_time: time_step,
+                        self.template_indicators_data: analysis_data,
+                        self.template_indicators_event: analysis_event}
+
+                    folder_name_dst, file_name_dst = os.path.split(file_path_dst)
+                    make_folder(folder_name_dst)
+
+                    write_obj(file_path_dst, analysis_obj)
+
+                    log_stream.info(' -----> Alert Area ' + group_key + ' ... DONE')
+
+                else:
+
+                    log_stream.info(' -----> Alert Area ' + group_key + ' ... SKIPPED. Some datasets are undefined')
+
+            else:
+                log_stream.info(' -----> Alert Area ' + group_key + ' ... SKIPPED. Analysis file created previously')
+
+        log_stream.info(' ----> Save analysis [' + str(self.time_step) + '] ... DONE')
+    # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
     # Method to organize analysis for soil moisture datasets
     def organize_analysis_sm(self, var_name='soil_moisture'):
 
-        logging.info(' ----> Compute soil moisture analysis [' + str(self.time_step) + '] ... ')
+        log_stream.info(' ----> Compute soil moisture analysis [' + str(self.time_step) + '] ... ')
 
         time_step = self.time_step
-        geo_data_alert_area = self.geo_data_alert_area
-        group_data_alert_area = self.structure_data_group
 
-        group_analysis = {}
-        for (group_data_key, group_data_items), geo_data_dframe in zip(group_data_alert_area.items(),
-                                                                       geo_data_alert_area.values()):
+        group_data = self.data_group
 
-            logging.info(' -----> Alert Area ' + group_data_key + '  ... ')
+        data_geo_reference_grid = self.data_geo_reference_grid
+        data_geo_alert_area_mask = self.data_geo_alert_area_mask
+        data_geo_alert_area_idx_grid = self.data_geo_alert_area_idx_grid
+        data_geo_region_grid = self.data_geo_region_grid
+        data_geo_region_index = self.data_geo_region_index
+        data_geo_pnt = self.data_geo_pnt
 
-            geoy_out_1d = geo_data_dframe['south_north'].values
-            geox_out_1d = geo_data_dframe['west_east'].values
-            mask_2d = geo_data_dframe.values
+        geo_y_ref_1d = data_geo_reference_grid['south_north'].values
+        geo_x_ref_1d = data_geo_reference_grid['west_east'].values
+        mask_ref_2d = data_geo_reference_grid.values
+        geo_x_ref_2d, geo_y_ref_2d = np.meshgrid(geo_x_ref_1d, geo_y_ref_1d)
 
-            geox_out_2d, geoy_out_2d = np.meshgrid(geox_out_1d, geoy_out_1d)
+        var_ts_group = {}
+        for group_key, group_items in group_data.items():
 
-            time_delta_max = find_maximum_delta(group_data_items['sm_datasets']['search_period'])
-            time_period_type = group_data_items['sm_datasets']['search_type'][0]
-            time_period_max, time_frequency_max = split_time_parts(time_delta_max)
+            log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... ')
 
-            time_range = self.compute_time_range(time_step, time_period_max, time_period_type, time_frequency_max)
+            file_path_dst = collect_file_list(
+                time_step, self.folder_name_dst_indicators_raw, self.file_name_dst_indicators_raw,
+                self.alg_template_tags, alert_area_name=group_key)[0]
 
-            file_list = collect_file_list(
-                time_range, self.folder_name_ancillary_sm_raw, self.file_name_ancillary_sm_raw,
-                self.alg_template_tags, alert_area_name=group_data_key)
+            # create the reference geographical name
+            name_key = self.alert_area_pivot_name_mask.format(group_key)
 
-            file_path_dest = collect_file_list(
-                time_step, self.folder_name_dest_indicators_raw, self.file_name_dest_indicators_raw,
-                self.alg_template_tags, alert_area_name=group_data_key)[0]
+            # get the reference geographical datasets
+            data_geo_reference_grid = data_geo_alert_area_mask[name_key]
 
-            if not os.path.exists(file_path_dest):
+            var_dset_obj = None
+            if not os.path.exists(file_path_dst):
 
-                file_list_check = []
-                time_range_check = []
-                for file_step, timestamp_step in zip(file_list, time_range):
-                    if os.path.exists(file_step):
-                        file_list_check.append(file_step)
+                # Get subdomain mask, longitudes and latitudes
+                mask_out_da = data_geo_reference_grid
+                geo_x_out_da = data_geo_reference_grid['west_east']
+                geo_y_out_da = data_geo_reference_grid['south_north']
+                mask_out_2d = data_geo_reference_grid.values
+                geo_y_out_1d = geo_y_out_da.values
+                geo_x_out_1d = geo_x_out_da.values
+                geo_x_out_2d, geo_y_out_2d = np.meshgrid(geo_x_out_1d, geo_y_out_1d)
+
+                # Get times features
+                time_delta_max = find_time_maximum_delta(group_items['sm_datasets']['search_period'])
+                time_period_type = group_items['sm_datasets']['search_type'][0]
+                time_period_max, time_frequency_max = split_time_window(time_delta_max)
+                time_range = self.compute_time_range(time_step, time_period_max, time_period_type, time_frequency_max)
+
+                # Get ancillary file list
+                file_list_anc = collect_file_list(
+                    time_range, self.folder_name_anc_sm_raw, self.file_name_anc_sm_raw,
+                    self.alg_template_tags, alert_area_name=group_key)
+
+                file_list_check, time_range_check = [], []
+                for file_anc_step, timestamp_step in zip(file_list_anc, time_range):
+                    if os.path.exists(file_anc_step):
+                        file_list_check.append(file_anc_step)
                         time_range_check.append(timestamp_step)
                 file_analysis = False
                 if file_list_check.__len__() >= 1:
@@ -314,473 +385,270 @@ class DriverAnalysis:
 
                 if file_analysis:
 
-                    analysis_collections = {}
+                    var_ts_analysis = {}
                     if file_list_check[0].endswith('.nc'):
-                        file_data_raw = xr.open_mfdataset(file_list_check, combine='by_coords')
+                        if var_dset_obj is None:
+                            var_dset_obj = xr.open_mfdataset(file_list_check, combine='by_coords')
                     elif file_list_check[0].endswith('.tiff'):
 
-                        if file_list_check.__len__() == 1:
-                            data_2d, proj, geotrans = read_file_tiff(file_list_check[0])
-                            file_data_raw = create_dset(
-                                data_2d, mask_2d, geox_out_2d, geoy_out_2d,
-                                var_data_time=time_step, var_data_name=var_name,
-                                var_geo_name='mask', var_data_attrs=None, var_geo_attrs=None,
-                                coord_name_x='longitude', coord_name_y='latitude', coord_name_time='time',
-                                dim_name_x='west_east', dim_name_y='south_north', dim_name_time='time',
-                                dims_order_2d=None, dims_order_3d=None)
-
-                        elif file_list.__len__() > 1:
-
-                            data_3d = np.zeros(shape=[geox_out_2d.shape[0], geoy_out_2d.shape[1], file_list_check.__len__()])
-                            data_3d[:, :, :] = np.nan
+                        if var_dset_obj is None:
+                            data_in_3d = np.zeros(
+                                shape=[geo_x_out_2d.shape[0], geo_y_out_2d.shape[1], file_list_check.__len__()])
+                            data_in_3d[:, :, :] = np.nan
                             data_time = []
-                            for file_id, (file_step, timestamp_step) in enumerate(zip(file_list_check, time_range_check)):
-                                data_2d, proj, geotrans = read_file_tiff(file_step)
-                                data_3d[:, :, file_id] = data_2d
-                                data_time.append(timestamp_step)
+                            for file_id, (file_name_step, time_stamp_step) in enumerate(zip(file_list_check, time_range)):
+                                da_in_2d, proj, geotrans = get_data_tiff_sm(file_name_step, file_mandatory=False)
 
-                            file_data_raw = create_dset(
-                                data_3d, mask_2d, geox_out_2d, geoy_out_2d,
+                                if da_in_2d is not None:
+                                    data_in_2d = da_in_2d.values
+                                    data_in_2d[mask_out_2d == 0] = np.nan
+                                    data_in_3d[:, :, file_id] = data_in_2d
+                                    data_time.append(time_stamp_step)
+
+                            var_dset_obj = create_dset(
+                                data_in_3d, mask_out_da, geo_x_out_2d, geo_y_out_2d,
                                 var_data_time=data_time, var_data_name=var_name,
                                 var_geo_name='mask', var_data_attrs=None, var_geo_attrs=None,
-                                coord_name_x='longitude', coord_name_y='latitude', coord_name_time='time',
+                                coord_name_x='west_east', coord_name_y='south_north', coord_name_time='time',
                                 dim_name_x='west_east', dim_name_y='south_north', dim_name_time='time',
                                 dims_order_2d=None, dims_order_3d=None)
 
-                        else:
-                            logging.error(' ===> Length of file list is not allowed')
-                            raise NotImplementedError('Case is not implemented yet')
-
                     else:
-                        logging.error(' ===> Filename format is not allowed')
+                        log_stream.error(' ===> Filename format is not allowed')
                         raise NotImplementedError('Format is not implemented yet')
 
-                    file_data_mean = file_data_raw[var_name].mean(dim=['south_north', 'west_east'])
+                    var_da_maps = var_dset_obj[var_name]
+                    var_ts_datasets = reproject_sm_map2ts(var_da_maps, column_name=self.template_struct_ts_datasets)
 
-                    file_time = list(file_data_raw.time.values)
-                    file_values_mean = file_data_mean.values
+                    # Debug
+                    # plt.figure()
+                    # plt.imshow(var_da_maps.values[:, :, 0])
+                    # plt.colorbar()
+                    # plt.show()
 
-                    file_ts = pd.DatetimeIndex(file_time)
+                    var_value_first, var_value_last, \
+                        var_value_avg, var_value_max, var_value_min = compute_sm_statistics(
+                            var_ts_datasets, column_name=self.template_struct_ts_datasets,
+                            tag_first_value=True, tag_last_value=True,
+                            tag_avg_value=True, tag_max_value=True, tag_min_value=True)
 
-                    if file_ts.shape[0] == 1:
-                        file_ts = [file_ts]
-                        file_values_mean = [file_values_mean]
+                    var_ts_analysis[self.template_sm_point_avg] = var_value_avg
+                    var_ts_analysis[self.template_sm_point_max] = var_value_max
+                    var_ts_analysis[self.template_sm_point_first] = var_value_first
+                    var_ts_analysis[self.template_sm_point_last] = var_value_last
 
-                    # Soil moisture average time-series
-                    analysis_df = pd.DataFrame(index=file_ts, data=file_values_mean,
-                                               columns=[self.template_struct_ts]).fillna(value=pd.NA)
+                    var_ts_collections = {self.template_struct_ts_datasets: var_ts_datasets,
+                                          self.template_struct_ts_analysis: var_ts_analysis}
 
-                    analysis_collections[self.template_struct_ts] = {}
-                    analysis_collections[self.template_struct_ts] = analysis_df
-
-                    # Soil moisture first value in tne selected period
-                    tag_sm_point_first = self.template_sm_point_first
-                    file_time_first = pd.Timestamp(file_time[0]).strftime('%Y%m%d_%H%M')
-                    file_value_first = float(file_values_mean[0])
-                    tag_sm_point_first = tag_sm_point_first.format(file_time_first)
-
-                    # Soil moisture last value in tne selected period
-                    tag_sm_point_last = self.template_sm_point_last
-                    file_time_last = pd.Timestamp(file_time[-1]).strftime('%Y%m%d_%H%M')
-                    file_value_last = float(file_values_mean[-1])
-                    tag_sm_point_last = tag_sm_point_last.format(file_time_last)
-
-                    # Soil moisture average in tne selected period
-                    tag_sm_point_avg = self.template_sm_point_avg
-                    file_value_avg = float(analysis_df[self.template_struct_ts].mean())
-
-                    # Soil moisture maximum in tne selected period
-                    tag_sm_point_max = self.template_sm_point_max
-                    file_value_max = float(analysis_df[self.template_struct_ts].max())
-
-                    #analysis_ts = analysis_df.max()
-
-                    analysis_collections[self.template_struct_obj] = {}
-                    analysis_collections[self.template_struct_obj][tag_sm_point_first] = file_value_first
-                    analysis_collections[self.template_struct_obj][tag_sm_point_last] = file_value_last
-                    analysis_collections[self.template_struct_obj][tag_sm_point_avg] = file_value_avg
-                    analysis_collections[self.template_struct_obj][tag_sm_point_max] = file_value_max
-
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... DONE')
+                    log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... DONE')
 
                 else:
-                    analysis_collections = None
-                    logging.warning(' ===> Soil moisture data are not available')
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Datasets are not available.')
+                    var_ts_collections = None
+                    log_stream.warning(' ===> Datasets are not available')
+                    log_stream.info(' -----> Get datasets for reference area "' + group_key +
+                                    '" ... SKIPPED. Datasets are not available.')
 
-                group_analysis[group_data_key] = analysis_collections
+                var_ts_group[group_key] = var_ts_collections
 
             else:
+                log_stream.info(' -----> Get datasets for reference area "' + group_key +
+                                '" ... SKIPPED. Analysis file created previously')
 
-                logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Analysis file created previously')
+        log_stream.info(' ----> Compute soil moisture analysis [' + str(self.time_step) + '] ... DONE')
 
-        logging.info(' ----> Compute soil moisture analysis [' + str(self.time_step) + '] ... DONE')
-
-        return group_analysis
-
-    # -------------------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------------------
-    # Method to define time range
-    @staticmethod
-    def compute_time_range(time, time_period_lenght=1, time_period_type='both', time_frequency='H'):
-
-        time_start_left = pd.date_range(start=time, periods=2, freq=time_frequency)[1]
-        time_end_right = time
-
-        if time_period_type == 'left':
-            time_range = pd.date_range(start=time_start_left, periods=time_period_lenght, freq=time_frequency)
-        elif time_period_type == 'right':
-            time_range = pd.date_range(end=time_end_right, periods=time_period_lenght, freq=time_frequency)
-        elif time_period_type == 'both':
-            time_range_left = pd.date_range(start=time_start_left, periods=time_period_lenght, freq=time_frequency)
-            time_range_right = pd.date_range(end=time_end_right, periods=time_period_lenght, freq=time_frequency)
-            time_range = time_range_right.union(time_range_left)
-        else:
-            logging.error(' ===> Bad definition for time_period_type')
-            raise NotImplementedError('Case not allowed.')
-
-        return time_range
+        return var_ts_group
 
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
-    # Method to organize analysis for rain map datasets
-    def organize_analysis_rain_map(self, var_name='rain'):
+    # Method to organize analysis for rain datasets
+    def organize_analysis_rain(self, var_name='rain'):
 
-        logging.info(' ----> Compute rain analysis map [' + str(self.time_step) + '] ... ')
+        log_stream.info(' ----> Compute rain analysis [' + str(self.time_step) + '] ... ')
 
         time_step = self.time_step
-        geo_data_region = self.geo_data_region
-        geo_data_alert_area = self.geo_data_alert_area
-        index_data_alert_area = self.index_data_alert_area
-        group_data_alert_area = self.structure_data_group
 
-        geoy_region_1d = geo_data_region['south_north'].values
-        geox_region_1d = geo_data_region['west_east'].values
-        mask_region_2d = geo_data_region.values
-        geox_region_2d, geoy_region_2d = np.meshgrid(geox_region_1d, geoy_region_1d)
+        group_data = self.data_group
 
-        group_analysis = {}
-        for (group_data_key, group_data_items), geo_data_dframe in zip(group_data_alert_area.items(),
-                                                                       geo_data_alert_area.values()):
+        data_geo_reference_grid = self.data_geo_reference_grid
+        data_geo_alert_area_mask = self.data_geo_alert_area_mask
+        data_geo_alert_area_idx_grid = self.data_geo_alert_area_idx_grid
+        data_geo_alert_area_idx_circle = self.data_geo_alert_area_idx_circle
+        data_geo_region_grid = self.data_geo_region_grid
+        data_geo_region_index = self.data_geo_region_index
+        data_geo_pnt = self.data_geo_pnt
 
-            logging.info(' -----> Alert Area ' + group_data_key + '  ... ')
+        geo_y_ref_1d = data_geo_reference_grid['south_north'].values
+        geo_x_ref_1d = data_geo_reference_grid['west_east'].values
+        mask_ref_2d = data_geo_reference_grid.values
+        geo_x_ref_2d, geo_y_ref_2d = np.meshgrid(geo_x_ref_1d, geo_y_ref_1d)
+
+        var_ts_group, var_dset_obj = {}, None
+        for group_key, group_items in group_data.items():
+
+            log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... ')
 
             file_path_dest = collect_file_list(
-                time_step, self.folder_name_dest_indicators_raw, self.file_name_dest_indicators_raw,
-                self.alg_template_tags, alert_area_name=group_data_key)[0]
+                time_step, self.folder_name_dst_indicators_raw, self.file_name_dst_indicators_raw,
+                self.alg_template_tags, alert_area_name=group_key)[0]
 
-            # Get index interpolated data between region and alert area domains
-            if group_data_key in list(index_data_alert_area.keys()):
-                index_data = index_data_alert_area[group_data_key]
-            else:
-                index_data = None
+            # create the reference geographical name
+            name_key_mask = self.alert_area_pivot_name_mask.format(group_key)
+            name_key_idx_circle = self.alert_area_pivot_name_idx_circle.format(group_key)
+
+            # get the reference geographical datasets
+            data_geo_reference_mask = data_geo_alert_area_mask[name_key_mask]
+            data_geo_reference_idx_circle = data_geo_alert_area_idx_circle[name_key_idx_circle]
 
             if not os.path.exists(file_path_dest):
-
-                geoy_out_1d = geo_data_dframe['south_north'].values
-                geox_out_1d = geo_data_dframe['west_east'].values
 
                 # Get subdomain mask, longitudes and latitudes
-                mask_out_2d = geo_data_dframe.values
-                geox_out_2d, geoy_out_2d = np.meshgrid(geox_out_1d, geoy_out_1d)
+                mask_out_da = data_geo_reference_mask
+                geo_x_out_da = data_geo_reference_mask['west_east']
+                geo_y_out_da = data_geo_reference_mask['south_north']
+                geo_y_out_1d = geo_y_out_da.values
+                geo_x_out_1d = geo_x_out_da.values
+                geo_x_out_2d, geo_y_out_2d = np.meshgrid(geo_x_out_1d, geo_y_out_1d)
 
-                time_delta_max = find_maximum_delta(group_data_items['rain_datasets']['search_period'])
-                time_period_type = group_data_items['rain_datasets']['search_type'][0]
-                time_period_max, time_frequency_max = split_time_parts(time_delta_max)
-
+                # Get times features
+                time_delta_max = find_time_maximum_delta(group_items['rain_datasets']['search_period'])
+                time_period_type = group_items['rain_datasets']['search_type'][0]
+                time_period_max, time_frequency_max = split_time_window(time_delta_max)
                 time_range = self.compute_time_range(time_step, time_period_max, time_period_type, time_frequency_max)
 
-                file_list = collect_file_list(
-                    time_range, self.folder_name_ancillary_rain_map_raw, self.file_name_ancillary_rain_map_raw,
+                # Get ancillary file list
+                file_list_anc = collect_file_list(
+                    time_range, self.folder_name_anc_rain_raw, self.file_name_anc_rain_raw,
                     self.alg_template_tags)
 
                 file_analysis = True
-                for file_step in file_list:
-                    if not os.path.exists(file_step):
-                        logging.warning(' ===> Filename ' + file_step + ' does not exist')
+                for file_anc_step in file_list_anc:
+                    if not os.path.exists(file_anc_step):
+                        logging.warning(' ===> Filename ' + file_anc_step + ' does not exist')
                         file_analysis = False
                         break
 
                 if file_analysis:
 
-                    if file_list[0].endswith('.nc'):
-                        file_obj = xr.open_mfdataset(file_list, combine='by_coords')
-                    elif file_list[0].endswith('.tiff'):
+                    if file_list_anc[0].endswith('.nc'):
+                        if var_dset_obj is None:
+                            var_dset_obj = xr.open_mfdataset(file_list_anc, combine='by_coords')
+                    elif file_list_anc[0].endswith('.tiff'):
 
-                        if file_list.__len__() > 1:
+                        if file_list_anc.__len__() > 1:
 
-                            data_out_3d = np.zeros(shape=[geox_out_2d.shape[0], geoy_out_2d.shape[1], file_list.__len__()])
-                            data_out_3d[:, :, :] = np.nan
-                            data_time = []
-                            for file_id, (file_step, timestamp_step) in enumerate(zip(file_list, time_range)):
-                                data_out_2d, proj, geotrans = read_file_tiff(file_step)
+                            if var_dset_obj is None:
+                                data_in_3d = np.zeros(
+                                    shape=[geo_x_ref_2d.shape[0], geo_y_ref_2d.shape[1], file_list_anc.__len__()])
+                                data_in_3d[:, :, :] = np.nan
+                                data_time = []
+                                for file_id, (file_name_step, time_stamp_step) in enumerate(zip(file_list_anc, time_range)):
+                                    da_in_2d, proj, geotrans = get_data_tiff_rain(file_name_step)
+                                    data_in_2d = da_in_2d.values
+                                    data_in_2d[mask_ref_2d == 0] = np.nan
+                                    data_in_3d[:, :, file_id] = data_in_2d
+                                    data_time.append(time_stamp_step)
 
-                                # Grid datasets over subdomain mask
-                                values_out_interp = interp_grid2map(geox_region_2d, geoy_region_2d,
-                                                                    data_out_2d.values,
-                                                                    geox_out_2d, geoy_out_2d,
-                                                                    index_out=index_data)
-                                values_out_interp[mask_out_2d == 0] = np.nan
-
-                                data_out_3d[:, :, file_id] = values_out_interp
-                                data_time.append(timestamp_step)
-
-                            file_obj = create_dset(
-                                data_out_3d, mask_out_2d, geox_out_2d, geoy_out_2d,
-                                var_data_time=data_time, var_data_name=var_name,
-                                var_geo_name='mask', var_data_attrs=None, var_geo_attrs=None,
-                                coord_name_x='longitude', coord_name_y='latitude', coord_name_time='time',
-                                dim_name_x='west_east', dim_name_y='south_north', dim_name_time='time',
-                                dims_order_2d=None, dims_order_3d=None)
+                                var_dset_obj = create_dset(
+                                    data_in_3d, mask_ref_2d, geo_x_ref_2d, geo_y_ref_2d,
+                                    var_data_time=data_time, var_data_name=var_name,
+                                    var_geo_name='mask', var_data_attrs=None, var_geo_attrs=None,
+                                    coord_name_x='west_east', coord_name_y='south_north', coord_name_time='time',
+                                    dim_name_x='west_east', dim_name_y='south_north', dim_name_time='time',
+                                    dims_order_2d=None, dims_order_3d=None)
 
                         else:
-                            logging.error(' ===> Length of file list is not allowed')
+                            log_stream.error(' ===> Length of file list is not allowed')
                             raise NotImplementedError('Case is not implemented yet')
 
                     else:
-                        logging.error(' ===> Filename format is not allowed')
+                        log_stream.error(' ===> Filename format is not allowed')
                         raise NotImplementedError('Format is not implemented yet')
 
-                    values_mean = file_obj[var_name].mean(dim=['south_north', 'west_east']).values
+                    # Compute maps values
+                    var_da_obj = var_dset_obj[var_name]
 
-                    analysis_df = pd.DataFrame(index=time_range, data=values_mean,
-                                               columns=[self.template_struct_ts]).fillna(value=pd.NA)
+                    # Compute maps values
+                    var_da_maps = reproject_rain_source2map(var_da_obj, mask_out_da, geo_x_out_da, geo_y_out_da)
+                    # Compute time-series values
+                    var_ts_datasets = reproject_rain_map2ts(var_da_maps, column_name=self.template_struct_ts_datasets)
 
-                    analysis_obj = {}
-                    for time_interval_value in group_data_items['rain_datasets']['search_period']:
-                        logging.info(' ------> Compute sum and avg values for ' + time_interval_value + ' ... ')
+                    var_ts_analysis, var_ts_peaks = {}, {}
+                    for time_window in group_items['rain_datasets']['search_period']:
 
-                        time_period, time_frequency = split_time_parts(time_interval_value)
+                        log_stream.info(' ------> Compute analysis over time "' + time_window + '" window ... ')
 
-                        tag_rain_accumulated = self.template_rain_point_accumulated.format(time_interval_value)
-                        # resample_df_sum = analysis_df[var_name].rolling(time_interval_value, min_periods=time_period).sum()
-                        resample_df_sum = analysis_df[self.template_struct_ts].resample(
-                            time_interval_value, label='right').sum()[:-1]
-                        analysis_df[tag_rain_accumulated] = resample_df_sum
+                        # Compute maps accumulated values and peaks
+                        log_stream.info(' -------> Rain peaks ... ')
+                        tag_ts_series_peaks = self.template_rain_ts_peak.format(time_window)
+                        var_map_accumulated = compute_rain_maps_accumulated(
+                            var_da_maps, time_window=time_window, time_direction='right')
+                        var_value_peak, var_dframe_peaks = compute_rain_peaks(
+                            var_map_accumulated, data_geo_reference_idx_circle)
+                        var_ts_peaks[tag_ts_series_peaks] = var_dframe_peaks
+                        var_ts_analysis[tag_ts_series_peaks] = var_value_peak
+                        log_stream.info(' -------> Rain peaks ... DONE')
 
-                        tag_rain_avg = self.template_rain_point_avg.format(time_interval_value)
-                        # resample_df_avg = analysis_df[var_name].rolling(time_interval_value, min_periods=time_period).mean()
-                        resample_df_avg = analysis_df[self.template_struct_ts].resample(
-                            time_interval_value, label='right').mean()[:-1]
-                        analysis_df[tag_rain_avg] = resample_df_avg
+                        # Compute time-series averaged values
+                        log_stream.info(' -------> Rain averaged time-series  ... ')
+                        tag_ts_series_avg = self.template_rain_ts_avg.format(time_window)
+                        var_ts_series_avg = compute_rain_ts_averaged(
+                            var_ts_datasets, column_name=self.template_struct_ts_datasets,
+                            time_window=time_window, time_direction='right')
+                        var_ts_datasets[tag_ts_series_avg] = var_ts_series_avg
 
-                        analysis_obj[tag_rain_accumulated] = float(resample_df_sum.max())
-                        analysis_obj[tag_rain_avg] = float(resample_df_avg.max())
+                        var_value_first, var_value_last, \
+                            var_value_avg, var_value_max, var_value_min = compute_rain_statistics(
+                                var_ts_datasets, column_name=tag_ts_series_avg,
+                                tag_first_value=False, tag_last_value=False,
+                                tag_avg_value=True, tag_max_value=False, tag_min_value=True)
+                        var_ts_analysis[tag_ts_series_avg] = var_value_avg
+                        log_stream.info(' -------> Rain averaged time-series  ... DONE')
 
-                        logging.info(' ------> Compute sum and avg values for ' + time_interval_value + ' ... DONE')
+                        # Compute time-series accumulated values
+                        log_stream.info(' -------> Rain accumulated time-series  ... ')
+                        tag_ts_series_accumulated = self.template_rain_ts_accumulated.format(time_window)
+                        var_ts_series_accumulated = compute_rain_ts_accumulated(
+                            var_ts_datasets, column_name=self.template_struct_ts_datasets,
+                            time_window=time_window, time_direction='right')
+                        var_ts_datasets[tag_ts_series_accumulated] = var_ts_series_accumulated
 
-                    analysis_collections = {self.template_struct_ts: analysis_df, self.template_struct_obj: analysis_obj}
+                        var_value_first, var_value_last, \
+                            var_value_avg, var_value_max, var_value_min = compute_rain_statistics(
+                                var_ts_datasets, column_name=tag_ts_series_accumulated,
+                                tag_first_value=False, tag_last_value=False,
+                                tag_avg_value=False, tag_max_value=True, tag_min_value=True)
+                        var_ts_analysis[tag_ts_series_accumulated] = var_value_max
+                        log_stream.info(' -------> Rain accumulated time-series  ... DONE')
 
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... DONE')
+                        log_stream.info(' ------> Compute analysis over time "' + time_window + '" window ... DONE')
 
-                else:
-                    analysis_collections = None
-                    logging.warning(' ===> Rain data are not available')
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Datasets are not available.')
+                    var_ts_collections = {self.template_struct_ts_datasets: var_ts_datasets,
+                                          self.template_struct_ts_analysis: var_ts_analysis,
+                                          self.template_struct_ts_peaks: var_ts_peaks}
 
-                group_analysis[group_data_key] = analysis_collections
-
-            else:
-
-                logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Analysis file created previously')
-
-        logging.info(' ----> Compute rain analysis map [' + str(self.time_step) + '] ... DONE')
-
-        return group_analysis
-
-    # -------------------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------------------
-    # Method to organize analysis for rain map datasets
-    def organize_analysis_rain_point(self, var_name='rain'):
-
-        logging.info(' ----> Compute rain analysis point [' + str(self.time_step) + '] ... ')
-
-        time_step = self.time_step
-
-        group_data_alert_area = self.structure_data_group
-        geo_data_weather_station = self.geo_data_weather_station
-
-        group_analysis = {}
-        for (group_data_key, group_data_items), geo_data_obj in zip(group_data_alert_area.items(),
-                                                                    geo_data_weather_station.values()):
-
-            logging.info(' -----> Alert Area ' + group_data_key + '  ... ')
-
-            file_path_dest = collect_file_list(
-                time_step, self.folder_name_dest_indicators_raw, self.file_name_dest_indicators_raw,
-                self.alg_template_tags, alert_area_name=group_data_key)[0]
-
-            if not os.path.exists(file_path_dest):
-
-                # Point located in the selected area
-                points_code_aa = list(geo_data_obj.keys())
-
-                # Points located both in the selected area and in neighbours areas
-                points_code_extended = []
-                for point_code_ref, point_code_df in geo_data_obj.items():
-                    point_code_tmp = point_code_df['code'].values
-                    points_code_extended.extend(point_code_tmp)
-                points_code_extended = list(set(points_code_extended))
-
-                if set(points_code_aa) != set(points_code_extended):
-                    logging.info(' ------> Some points are located in the neighbours areas')
-
-                time_delta_max = find_maximum_delta(group_data_items['rain_datasets']['search_period'])
-                time_period_type = group_data_items['rain_datasets']['search_type'][0]
-                time_period_max, time_frequency_max = split_time_parts(time_delta_max)
-
-                time_range = self.compute_time_range(time_step, time_period_max, time_period_type, time_frequency_max)
-
-                file_list = collect_file_list(
-                    time_range, self.folder_name_ancillary_rain_point_raw, self.file_name_ancillary_rain_point_raw,
-                    self.alg_template_tags)
-
-                file_analysis = True
-                for file_step in file_list:
-                    if not os.path.exists(file_step):
-                        logging.warning(' ===> Filename ' + file_step + ' does not exist')
-                        file_analysis = False
-                        break
-
-                if file_analysis:
-
-                    if file_list[0].endswith('.csv'):
-
-                        if file_list.__len__() > 1:
-
-                            point_collections = None
-                            point_time = []
-                            for file_id, (file_step, timestamp_step) in enumerate(zip(file_list, time_range)):
-
-                                logging.info(' ------> Timestep ' + str(timestamp_step) + ' ... ')
-
-                                point_obj_raw = pd.read_csv(file_step)
-
-                                point_obj_timestamp = pd.Timestamp(list(set(point_obj_raw['time'].values))[0])
-
-                                point_obj_aa = point_obj_raw[point_obj_raw['code'].isin(points_code_extended)]
-                                point_obj_aa = point_obj_aa.drop(columns=['time', 'index', 'name',
-                                                                          'longitude', 'latitude'])
-
-                                point_obj_aa = point_obj_aa.set_index('code')
-                                point_obj_aa.index.name = 'code'
-
-                                if point_collections is None:
-                                    point_collections = deepcopy(point_obj_aa)
-                                else:
-                                    point_collections = pd.concat([point_collections, point_obj_aa],
-                                                                  1, ignore_index=True)
-                                point_time.append(point_obj_timestamp)
-
-                                logging.info(' ------> Timestep ' + str(timestamp_step) + ' ... DONE')
-
-                            point_values = point_collections.values.T
-                            point_code = point_collections.index.values
-                            point_datetime_idx = pd.DatetimeIndex(point_time)
-
-                            point_df = pd.DataFrame(data=point_values, index=point_time, columns=point_code)
-
-                        else:
-                            logging.error(' ===> Length of file list is not allowed')
-                            raise NotImplementedError('Case is not implemented yet')
-                    else:
-                        logging.error(' ===> Filename format is not allowed')
-                        raise NotImplementedError('Format is not implemented yet')
-
-                    analysis_obj = {}
-                    for geo_key, geo_neighbour in geo_data_obj.items():
-                        logging.info(' ------> Weather Station ' + geo_key + ' ... ')
-
-                        geo_codes_nb = list(geo_neighbour['code'])
-                        geo_codes_filter = list(set(geo_codes_nb).intersection(list(point_df.columns)))
-
-                        if geo_codes_filter.__len__() > 0:
-                            for time_interval_value in group_data_items['rain_datasets']['search_period']:
-
-                                logging.info(' -------> Compute peak for ' + time_interval_value + ' ... ')
-
-                                tag_rain_peak = self.template_rain_point_peak.format(time_interval_value)
-
-                                point_df_select = point_df[geo_codes_filter]
-                                point_df_resample_sum = point_df_select.resample(
-                                    time_interval_value, label='right', closed='right').sum() # [:-1]
-                                point_df_resample_max = point_df_resample_sum.max()
-                                point_rasample_values = point_df_resample_max.to_numpy()
-                                point_max_value = point_rasample_values.max()
-
-                                if tag_rain_peak not in list(analysis_obj.keys()):
-                                    analysis_obj[tag_rain_peak] = {}
-                                    analysis_obj[tag_rain_peak][geo_key] = point_max_value
-                                else:
-                                    point_max_tmp = analysis_obj[tag_rain_peak]
-                                    point_max_tmp[geo_key] = point_max_value
-                                    analysis_obj[tag_rain_peak] = point_max_tmp
-
-                                logging.info(' -------> Compute peak for ' + time_interval_value + ' ... DONE')
-
-                            logging.info(' ------> Weather Station ' + geo_key + ' ... DONE')
-                        else:
-                            logging.info(' ------> Weather Station ' + geo_key + ' ... SKIPPED. Datasets are null')
-
-                    peak_obj = {}
-                    for analysis_time, analysis_dataset in analysis_obj.items():
-                        value_max = pd.Series(analysis_dataset).max()
-                        peak_obj[analysis_time] = value_max
-
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... DONE')
+                    log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... DONE')
 
                 else:
-                    peak_obj = None
-                    logging.warning(' ===> Rain data are not available')
-                    logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Datasets are not available.')
+                    var_ts_collections = None
+                    log_stream.warning(' ===> Datasets are not available')
+                    log_stream.info(' -----> Get datasets for reference area "' + group_key +
+                                    '" ... SKIPPED. Datasets are not available.')
 
-                group_analysis[group_data_key] = peak_obj
+                var_ts_group[group_key] = var_ts_collections
 
             else:
+                log_stream.info(' -----> Get datasets for reference area "' + group_key +
+                                '" ... SKIPPED. Analysis file created previously')
 
-                logging.info(' -----> Alert Area ' + group_data_key + ' ... SKIPPED. Analysis file created previously')
+        log_stream.info(' ----> Compute rain analysis [' + str(self.time_step) + '] ... DONE')
 
-        logging.info(' ----> Compute rain analysis point [' + str(self.time_step) + '] ... DONE')
+        return var_ts_group
 
-        return group_analysis
-
-    # -------------------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------------------
-    # Method to compute time interval
-    @staticmethod
-    def compute_time_interval(time_step, time_delta_max, time_delta_list):
-
-        time_period_max, time_frequency_max = split_time_parts(time_delta_max)
-
-        time_interval = {}
-        for time_delta_step in time_delta_list:
-
-            time_period_step, time_frequency_step = split_time_parts(time_delta_step)
-            time_period_ratio = int(time_period_max / time_period_step)
-
-            time_step_range_down = pd.date_range(start=time_step, periods=time_period_ratio, freq=time_delta_step)
-            time_step_up = pd.date_range(start=time_step, periods=time_period_step, freq=time_frequency_max)[-1]
-            time_step_range_up = pd.date_range(start=time_step_up, periods=time_period_ratio, freq=time_delta_step)
-
-            time_interval[time_delta_step] = {}
-            for time_id, (time_step_down, time_step_up) in enumerate(zip(time_step_range_down, time_step_range_up)):
-                time_interval[time_delta_step]['time_{}'.format(str(time_id))] = {}
-
-                time_interval[time_delta_step]['time_{}'.format(str(time_id))]['time_start'] = {}
-                time_interval[time_delta_step]['time_{}'.format(str(time_id))]['time_start'] = time_step_down
-                time_interval[time_delta_step]['time_{}'.format(str(time_id))]['time_end'] = {}
-                time_interval[time_delta_step]['time_{}'.format(str(time_id))]['time_end'] = time_step_up
-
-        return time_interval
     # -------------------------------------------------------------------------------------
 
 
 # -------------------------------------------------------------------------------------
-
 
 # -------------------------------------------------------------------------------------
 # Method to collect ancillary file

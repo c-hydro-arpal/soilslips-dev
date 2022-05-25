@@ -3,28 +3,30 @@ Class Features
 
 Name:          driver_data_io_geo_point_weather_stations
 Author(s):     Fabio Delogu (fabio.delogu@cimafoundation.org)
-Date:          '20210411'
-Version:       '1.0.0'
+Date:          '20220428'
+Version:       '2.0.0'
 """
 
 ######################################################################################
 # Library
 import logging
 import os
-import numpy as np
-import pandas as pd
 
-import shapefile
-from shapely.geometry import shape, Point
+from lib_utils_data_point_weather_stations import read_point_file, \
+    join_point_and_grid, join_point_and_neighbours, \
+    save_point_dframe2csv, read_point_csv2dframe
+from lib_data_io_pickle import write_obj, read_obj
+from lib_utils_geo import km_2_degree
+from lib_utils_system import make_folder
+from lib_utils_io_obj import filter_obj_variables, filter_obj_datasets
 
-from scipy.spatial import cKDTree
+from lib_info_args import logger_name_scenarios as logger_name
 
-from lib_utils_io import write_obj, read_obj
-from lib_utils_geo import get_file_point, km_2_degree
-from lib_utils_system import fill_tags2string, make_folder
+# Logging
+log_stream = logging.getLogger(logger_name)
 
 # Debug
-# import matplotlib.pylab as plt
+import matplotlib.pylab as plt
 ######################################################################################
 
 
@@ -34,9 +36,10 @@ class DriverGeoPoint:
 
     # -------------------------------------------------------------------------------------
     # Initialize class
-    def __init__(self, src_dict, dst_dict=None, group_data=None,
-                 flag_point_data_src='weather_stations_data',  flag_grid_data='geo_data',
-                 flag_point_data_dst='weather_stations_data',
+    def __init__(self, src_dict, dst_dict=None, tmp_dict=None,
+                 collections_data_geo=None, collections_data_group=None,
+                 flag_point_data_src='weather_stations', flag_point_data_dst='weather_stations',
+                 flag_grid_data='geo',
                  alg_template_tags=None, flag_geo_updating=True,
                  search_radius_km=10):
 
@@ -47,178 +50,67 @@ class DriverGeoPoint:
         self.file_name_tag = 'file_name'
         self.folder_name_tag = 'folder_name'
 
-        self.point_registry_tag = 'registry'
-        self.point_alert_area_tree_tag = 'alert_area_tree'
-        self.grid_vector_tag = 'alert_area_vector'
+        self.point_registry_data_tag = 'registry_data'
+        self.point_registry_tree_tag = 'registry_tree'
 
         self.point_code_tag = 'code'
         self.point_name_tag = 'name'
         self.point_longitude_tag = 'longitude'
         self.point_latitude_tag = 'latitude'
-        self.point_alert_area_tag = 'alert_area'
 
-        self.group_data = group_data
+        self.alert_area_tag = 'alert_area'
+        self.alert_area_pivot_name_vector = 'alert_area:vector_data'
+        self.alert_area_pivot_name_mask = 'alert_area:mask_data'
+
+        self.geo_data = collections_data_geo
+        self.group_data = collections_data_group
         self.alg_template_tags = alg_template_tags
 
+        # flags for updating dataset(s)
         self.flag_geo_updating = flag_geo_updating
+        # search radius (to define searched area)
         self.search_radius_km = search_radius_km
 
-        self.file_name_point_registry_src = src_dict[
-            self.flag_point_data_src][self.point_registry_tag][self.file_name_tag]
-        self.folder_name_point_registry_src = src_dict[
-            self.flag_point_data_src][self.point_registry_tag][self.folder_name_tag]
-        self.file_path_point_registry_src = os.path.join(
-            self.folder_name_point_registry_src, self.file_name_point_registry_src)
+        self.file_name_point_registry_data_src = src_dict[
+            self.flag_point_data_src][self.point_registry_data_tag][self.file_name_tag]
+        self.folder_name_point_registry_data_src = src_dict[
+            self.flag_point_data_src][self.point_registry_data_tag][self.folder_name_tag]
+        self.file_path_point_registry_data_src = os.path.join(
+            self.folder_name_point_registry_data_src, self.file_name_point_registry_data_src)
 
-        self.file_name_point_registry_dst = dst_dict[
-            self.flag_point_data_dst][self.point_registry_tag][self.file_name_tag]
-        self.folder_name_point_registry_dst = dst_dict[
-            self.flag_point_data_dst][self.point_registry_tag][self.folder_name_tag]
-        self.file_path_point_registry_dst = os.path.join(
-            self.folder_name_point_registry_dst, self.file_name_point_registry_dst)
+        self.file_name_point_registry_data_dst = dst_dict[
+            self.flag_point_data_dst][self.point_registry_data_tag][self.file_name_tag]
+        self.folder_name_point_registry_data_dst = dst_dict[
+            self.flag_point_data_dst][self.point_registry_data_tag][self.folder_name_tag]
+        self.file_path_point_registry_data_dst = os.path.join(
+            self.folder_name_point_registry_data_dst, self.file_name_point_registry_data_dst)
 
-        self.file_name_point_alert_area_tree_dst = dst_dict[
-            self.flag_point_data_dst][self.point_alert_area_tree_tag][self.file_name_tag]
-        self.folder_name_point_alert_area_tree_dst = dst_dict[
-            self.flag_point_data_dst][self.point_alert_area_tree_tag][self.folder_name_tag]
-        self.file_path_point_alert_area_tree_dst = os.path.join(
-            self.folder_name_point_alert_area_tree_dst, self.file_name_point_alert_area_tree_dst)
+        self.file_name_point_registry_tree_dst = dst_dict[
+            self.flag_point_data_dst][self.point_registry_tree_tag][self.file_name_tag]
+        self.folder_name_point_registry_tree_dst = dst_dict[
+            self.flag_point_data_dst][self.point_registry_tree_tag][self.folder_name_tag]
+        self.file_path_point_registry_tree_dst = os.path.join(
+            self.folder_name_point_registry_tree_dst, self.file_name_point_registry_tree_dst)
 
-        self.file_name_grid = dst_dict[self.flag_grid_data][self.grid_vector_tag][self.file_name_tag]
-        self.folder_name_grid = dst_dict[self.flag_grid_data][self.grid_vector_tag][self.folder_name_tag]
-        self.file_path_grid = self.collect_file_obj(self.folder_name_grid, self.file_name_grid)
+        # select alert area vector and mask dataset(s)
+        vars_alert_area_vector = filter_obj_variables(
+            list(self.geo_data[self.alert_area_tag].keys()), self.alert_area_pivot_name_vector)
+        vars_alert_area_mask = filter_obj_variables(
+            list(self.geo_data[self.alert_area_tag].keys()), self.alert_area_pivot_name_mask)
 
-        self.search_radius_degree = km_2_degree(self.search_radius_km)
+        self.geo_alert_area_vector = filter_obj_datasets(self.geo_data[self.alert_area_tag], vars_alert_area_vector)
+        self.geo_alert_area_mask = filter_obj_datasets(self.geo_data[self.alert_area_tag], vars_alert_area_mask)
 
-        if self.flag_geo_updating:
-            if os.path.exists(self.file_path_point_registry_dst):
-                os.remove(self.file_path_point_registry_dst)
+        # tmp object(s)
+        self.folder_name_tmp = tmp_dict[self.folder_name_tag]
+        self.file_name_tmp = tmp_dict[self.file_name_tag]
 
-        logging.info(' -----> Define geo points registry ... ')
-        if not os.path.exists(self.file_path_point_registry_dst):
-            df_geo_point = self.dset_geo_point = self.read_geo_point()
-            self.df_geo_point = self.join_geo_point2grid(df_geo_point)
-            make_folder(self.folder_name_point_registry_dst)
-            self.df_geo_point.to_csv(self.file_path_point_registry_dst)
-            logging.info(' -----> Define geo points registry ... DONE')
-        else:
-            self.df_geo_point = pd.read_csv(self.file_path_point_registry_dst)
-            logging.info(' -----> Define geo points registry ... LOADED. Datasets was previously computed.')
+        # define radius for searching object(s)
+        self.radius_distance_max = km_2_degree(self.search_radius_km)
+        self.radius_distance_inf = float("inf")
 
         self.tag_sep = ':'
 
-    # -------------------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------------------
-    # Method to collect file
-    def collect_file_obj(self, folder_name_raw, file_name_raw):
-
-        data_group = self.group_data
-
-        file_name_obj = {}
-        for group_key, group_data in data_group.items():
-
-            file_name_obj[group_key] = {}
-
-            group_name = group_data['name']
-            alg_template_values_step = {'alert_area_name': group_name}
-
-            folder_name_def = fill_tags2string(
-                folder_name_raw, self.alg_template_tags, alg_template_values_step)
-            file_name_def = fill_tags2string(
-                file_name_raw, self.alg_template_tags, alg_template_values_step)
-            file_path_def = os.path.join(folder_name_def, file_name_def)
-
-            file_name_obj[group_key] = {}
-            file_name_obj[group_key] = file_path_def
-
-        return file_name_obj
-
-    # -------------------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------------------
-    # Method to define the domain for each point
-    def join_geo_point2grid(self, point_dframe):
-
-        point_x = point_dframe[self.point_longitude_tag].values
-        point_y = point_dframe[self.point_latitude_tag].values
-
-        point_domain_array = np.array([None] * point_dframe.shape[0], dtype=object)
-        point_polygon = {}
-        for var_name, file_name in self.file_path_grid.items():
-
-            if os.path.exists(file_name):
-                # read the shapefile
-                file_handle = shapefile.Reader(file_name)
-                # get the shapes
-                file_shapes = file_handle.shapes()
-                # build a shapely polygon from your shape
-                file_polygon = shape(file_shapes[0])
-
-                for i, (x, y) in enumerate(zip(point_x, point_y)):
-                    var_point = Point(x, y)
-                    if file_polygon.contains(var_point):
-                        point_domain_array[i] = var_name
-
-                if var_name not in list(point_polygon.keys()):
-                    point_polygon[var_name] = file_polygon
-
-            else:
-                logging.error(' ===> Alert area shapefile "' + file_name + '" is not available')
-                raise IOError('File not found!')
-
-        point_domain_list = point_domain_array.tolist()
-
-        for point_id, point_aa in enumerate(point_domain_list):
-            if point_aa is None:
-
-                code = point_dframe[self.point_code_tag].values[point_id]
-                x = point_dframe[self.point_longitude_tag].values[point_id]
-                y = point_dframe[self.point_latitude_tag].values[point_id]
-
-                logging.warning(' ===> Reference area for point "' +
-                                code + '" is not defined. Try using a polygon build around the point')
-                var_polygon = Point(x, y).buffer(self.search_radius_degree)
-
-                for var_name, file_polygon in point_polygon.items():
-                    if file_polygon.intersects(var_polygon):
-                        point_domain_array[point_id] = var_name
-
-                if point_domain_array[point_id] is None:
-                    logging.warning(' ===> Reference area for point "' + code + '" is undefined. Use default assignment')
-                else:
-                    logging.warning(' ===> Reference area for point "' + code + '" is correctly defined')
-
-        point_domain_list = point_domain_array.tolist()
-        point_dframe[self.point_alert_area_tag] = point_domain_list
-
-        # DEFAULT STATIC CONDITION TO FIX POINTS OUTSIDE THE DOMAINS (IF NEEDED AFTER POINT AND POLYGONS APPROACHES)
-        if point_dframe.loc[point_dframe[self.point_code_tag] == 'ALTOM', self.point_alert_area_tag].values[0] is None:
-            point_dframe.loc[point_dframe[self.point_code_tag] == 'ALTOM', self.point_alert_area_tag] = "alert_area_a"
-        if point_dframe.loc[point_dframe[self.point_code_tag] == 'CASON', self.point_alert_area_tag].values[0] is None:
-            point_dframe.loc[point_dframe[self.point_code_tag] == 'CASON', self.point_alert_area_tag] = "alert_area_c"
-
-        return point_dframe
-    # -------------------------------------------------------------------------------------
-
-    # -------------------------------------------------------------------------------------
-    # Method to read weather stations data file
-    def read_geo_point(self):
-
-        # Read geo points db
-        if os.path.exists(self.file_path_point_registry_src):
-            point_dframe = get_file_point(self.file_path_point_registry_src, file_sep=';')
-        else:
-            logging.error(' ===> Weather stations database file "' +
-                          self.file_path_point_registry_src + '" is not available')
-            raise IOError('File not found!')
-
-        # Adjust geo points dataframe
-        point_dframe = point_dframe.reset_index()
-        point_dframe = point_dframe.drop(columns=['index'])
-        point_dframe.index.name = 'index'
-
-        return point_dframe
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
@@ -226,76 +118,60 @@ class DriverGeoPoint:
     def organize_data(self):
 
         # Starting info
-        logging.info(' ----> Organize weather stations point information ... ')
+        log_stream.info(' ----> Organize weather stations point information ... ')
 
-        df_point = self.df_geo_point
-        max_distance = self.search_radius_degree
-        inf_distance = float("inf")
+        file_path_point_registry_data_src = self.file_path_point_registry_data_src
+        file_path_point_registry_data_dst = self.file_path_point_registry_data_dst
+        file_path_point_registry_tree_dst = self.file_path_point_registry_tree_dst
 
-        file_path_point = self.file_path_point_alert_area_tree_dst
-        flag_geo_updating = self.flag_geo_updating
+        if self.flag_geo_updating:
+            if os.path.exists(file_path_point_registry_data_dst):
+                os.remove(file_path_point_registry_data_dst)
+            if os.path.exists(file_path_point_registry_tree_dst):
+                os.remove(file_path_point_registry_tree_dst)
 
-        if flag_geo_updating:
-            if os.path.exists(file_path_point):
-                os.remove(file_path_point)
+        log_stream.info(' -----> Define registry points data ... ')
+        if not os.path.exists(file_path_point_registry_data_dst):
 
-        if not os.path.exists(file_path_point):
+            obj_point_registry = read_point_file(file_path_point_registry_data_src)
+            obj_point_registry = join_point_and_grid(
+                obj_point_registry, self.geo_alert_area_vector, max_distance=self.radius_distance_max,
+                point_code_tag=self.point_code_tag, point_area_tag=self.alert_area_tag,
+                point_longitude_tag=self.point_longitude_tag, point_latitude_tag=self.point_latitude_tag
+            )
 
-            code_points = df_point[self.point_code_tag].values
-            name_points = df_point[self.point_name_tag].values
-            lats_points = df_point[self.point_latitude_tag].values
-            lons_points = df_point[self.point_longitude_tag].values
-            aa_points = df_point[self.point_alert_area_tag].values
-
-            coord_points = np.dstack([lats_points.ravel(), lons_points.ravel()])[0]
-            coord_tree = cKDTree(coord_points)
-
-            weather_stations_collections = {}
-            for code_point, aa_point, coord_point in zip(code_points, aa_points, coord_points):
-
-                distances, indices = coord_tree.query(
-                    coord_point, len(coord_points), p=2, distance_upper_bound=max_distance)
-
-                code_points_neighbors = []
-                name_points_neighbors = []
-                coord_points_neighbors = []
-                lats_points_neighbors = []
-                lons_points_neighbors = []
-                aa_points_neighbors = []
-                for index, distance in zip(indices, distances):
-                    if distance == inf_distance:
-                        break
-                    coord_points_neighbors.append(coord_points[index])
-                    code_points_neighbors.append(code_points[index])
-                    name_points_neighbors.append(name_points[index])
-                    lons_points_neighbors.append(lons_points[index])
-                    lats_points_neighbors.append(lats_points[index])
-                    aa_points_neighbors.append(aa_points[index])
-
-                coord_dict = {
-                    self.point_code_tag: code_points_neighbors, self.point_name_tag: name_points_neighbors,
-                    self.point_latitude_tag: lats_points_neighbors, self.point_longitude_tag: lons_points_neighbors,
-                    self.point_alert_area_tag: aa_points_neighbors
-                }
-                coord_dframe = pd.DataFrame(data=coord_dict)
-
-                if aa_point not in list(weather_stations_collections.keys()):
-                    weather_stations_collections[aa_point] = {}
-                weather_stations_collections[aa_point][code_point] = coord_dframe
-
-            folder_name, file_name = os.path.split(file_path_point)
+            folder_name, file_name = os.path.split(file_path_point_registry_data_dst)
             make_folder(folder_name)
-            write_obj(file_path_point, weather_stations_collections)
+            save_point_dframe2csv(file_path_point_registry_data_dst, obj_point_registry)
 
-            # Ending info
-            logging.info(' ----> Organize weather stations point information ... DONE')
+            log_stream.info(' -----> Define registry points data ... DONE')
+        else:
+            obj_point_registry = read_point_csv2dframe(file_path_point_registry_data_dst)
+            log_stream.info(' -----> Define registry points data ... SKIPPED. Datasets was previously computed.')
+
+        log_stream.info(' -----> Define registry points tree ... ')
+        if not os.path.exists(file_path_point_registry_tree_dst):
+
+            obj_point_tree = join_point_and_neighbours(
+                obj_point_registry,
+                max_distance=self.radius_distance_max, inf_distance=self.radius_distance_inf,
+                point_code_tag=self.point_code_tag, point_name_tag=self.point_name_tag,
+                point_area_tag=self.alert_area_tag,
+                point_longitude_tag=self.point_longitude_tag, point_latitude_tag=self.point_latitude_tag
+            )
+
+            folder_name, file_name = os.path.split(file_path_point_registry_tree_dst)
+            make_folder(folder_name)
+            write_obj(file_path_point_registry_tree_dst, obj_point_tree)
+
+            log_stream.info(' -----> Define registry points tree ... DONE')
 
         else:
-            # Ending info
-            weather_stations_collections = read_obj(file_path_point)
-            logging.info(' ----> Organize weather stations point information ... LOADED. '
-                         'Datasets was previously computed.')
+            obj_point_tree = read_obj(file_path_point_registry_tree_dst)
+            log_stream.info(' -----> Define registry points tree ... SKIPPED. Datasets was previously computed.')
 
-        return weather_stations_collections
+        return obj_point_tree
+
+    # -------------------------------------------------------------------------------------
 
 # -------------------------------------------------------------------------------------
