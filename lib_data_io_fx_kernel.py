@@ -86,6 +86,24 @@ def filter_dataframe_columns(file_dframe, file_cols_filter=None):
 
 
 # -------------------------------------------------------------------------------------
+# Method to fill dataframe nans
+def fill_dataframe_nan(file_dframe, column_list=None, fill_value_list=None):
+
+    if column_list is None:
+        column_list = ['event_threshold']
+    if fill_value_list is None:
+        fill_value_list = ['NA']
+
+    for column_step, fill_value_step in zip(column_list, fill_value_list):
+        file_series = file_dframe[column_step]
+        file_series = file_series.fillna(value=fill_value_step)
+        file_dframe[column_step] = file_series
+    return file_dframe
+
+# -------------------------------------------------------------------------------------
+
+
+# -------------------------------------------------------------------------------------
 # Method to add dataframe columns
 def add_dataframe_columns(file_dframe,
                           tag_day_of_the_year='day_of_the_year', field_day_of_the_year=True, obj_day_of_the_year=None,

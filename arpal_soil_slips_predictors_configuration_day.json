@@ -4,7 +4,7 @@
       "title": "Running tool for soil slips predictors",
       "web-site": "",
       "source": "Python library developed by ARPAL and CIMA Research Foundation",
-      "history": "1.2.0 [20220517]",
+      "history": "1.3.0 [20221013]",
       "project-info": "arpal",
       "algorithm": "Algorithm developed by ARPAL and CIMA Research Foundation"
     },
@@ -76,9 +76,17 @@
   "data": {
     "static" : {
       "source": {
-        "training_matrix": {
+        "training_matrix_center": {
           "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/training_predictors/",
           "file_name": "Xtr_centered.csv"
+        },
+        "training_matrix_max": {
+          "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/training_predictors/",
+          "file_name": "Xtr_max.csv"
+        },
+        "training_matrix_mean": {
+          "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/training_predictors/",
+          "file_name": "Xtrn_mean.csv"
         },
         "training_coefficient": {
           "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/training_predictors/",
@@ -95,18 +103,18 @@
     "dynamic": {
       "info": {
         "predictors_data": {
-          "time_period": null,
+          "time_period": 30,
           "time_frequency": "D",
           "time_rounding": "D",
-          "time_start": "2018-01-01 00:00",
-          "time_end": "2019-01-01 00:00",
+          "time_start": null,
+          "time_end": null,
           "analysis_method": "kernel"
         }
       },
       "source": {
         "predictors_data" : {
           "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_dynamic/outcome/scenarios_datasets/{source_sub_path_time}",
-          "file_name": "scenarios_*_201912300000.csv",
+          "file_name": "scenarios_{source_datetime}.csv",
           "columns_names": [
             "time", "sm_value_first",
             "rain_accumulated_12H", "rain_peak_3H",
@@ -142,10 +150,10 @@
   },
   "time": {
     "time_now": null,
-    "time_period": 2,
+    "time_period": 1,
     "time_frequency": "D",
     "time_rounding": "D",
-    "time_start": "2018-10-30 00:00",
-    "time_end": "2018-11-01 00:00"
+    "time_start": null,
+    "time_end": null
   }
 }

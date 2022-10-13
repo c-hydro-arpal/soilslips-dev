@@ -45,7 +45,10 @@ class DriverAnalysis:
                  ancillary_dict=None, fx_dict=None,
                  template_dict=None,
                  flag_fx='fx_kernel',
-                 flag_static_src_matrix='training_matrix', flag_static_src_coeff='training_coefficient',
+                 flag_static_src_matrix_center='training_matrix_center',
+                 flag_static_src_matrix_max='training_matrix_max',
+                 flag_static_src_matrix_mean='training_matrix_mean',
+                 flag_static_src_coeff='training_coefficient',
                  flag_dynamic_info='predictors_data',
                  flag_dynamic_src='predictors_data',
                  flag_dynamic_anc='predictors_data',
@@ -68,7 +71,9 @@ class DriverAnalysis:
         self.names_columns_tag = 'columns_names'
 
         self.flag_fx = flag_fx
-        self.flag_static_src_matrix = flag_static_src_matrix
+        self.flag_static_src_matrix_center = flag_static_src_matrix_center
+        self.flag_static_src_matrix_max = flag_static_src_matrix_max
+        self.flag_static_src_matrix_mean = flag_static_src_matrix_mean
         self.flag_static_src_coeff = flag_static_src_coeff
         self.flag_dynamic_info = flag_dynamic_info
         self.flag_dynamic_src = flag_dynamic_src
@@ -117,25 +122,45 @@ class DriverAnalysis:
     # Method to define fx attrs
     def define_fx_attrs(self, fx_flag, fx_datasets):
 
+        flag_static_src_matrix_center = self.flag_static_src_matrix_center
+        flag_static_src_matrix_max = self.flag_static_src_matrix_max
+        flag_static_src_matrix_mean = self.flag_static_src_matrix_mean
+        flag_static_src_coeff = self.flag_static_src_coeff
+
         fx_attrs = {}
         if fx_flag == 'fx_kernel':
 
-            flag_fx_matrix, flag_fx_coeff = 'fx_training_matrix', 'fx_training_coefficient'
+            flag_fx_matrix_center, flag_fx_coeff = 'fx_training_matrix_center', 'fx_training_coefficient'
+            flag_fx_matrix_max, flag_fx_matrix_mean = 'fx_training_matrix_max', 'fx_training_matrix_mean'
             flag_fx_param_type, flag_fx_param_exponent = 'fx_parameters_type', 'fx_parameters_exponent'
             flag_fx_filter_columns, flag_fx_filter_group_idx = 'fx_filter_columns', 'fx_filter_group_index'
             flag_fx_filter_warning_thr, flag_fx_filter_warning_idx = 'fx_filter_warning_threshold', 'fx_filter_warning_threshold'
 
-            if 'training_matrix' not in list(fx_datasets.keys()):
-                log_stream.error(' ===> Fx datasets "training_matrix" is not available in the reference obj')
+            if flag_static_src_matrix_center not in list(fx_datasets.keys()):
+                log_stream.error(' ===> Fx datasets "' + flag_static_src_matrix_center +
+                                 '" is not available in the reference obj')
                 raise IOError('Datasets is mandatory to apply the method. Exit.')
             else:
-                fx_attrs[flag_fx_matrix] = deepcopy(fx_datasets['training_matrix'])
+                fx_attrs[flag_fx_matrix_center] = deepcopy(fx_datasets[flag_static_src_matrix_center])
+            if flag_static_src_matrix_max not in list(fx_datasets.keys()):
+                log_stream.error(' ===> Fx datasets "' + flag_static_src_matrix_max +
+                                 '" is not available in the reference obj')
+                raise IOError('Datasets is mandatory to apply the method. Exit.')
+            else:
+                fx_attrs[flag_fx_matrix_max] = deepcopy(fx_datasets[flag_static_src_matrix_max])
+            if flag_static_src_matrix_mean not in list(fx_datasets.keys()):
+                log_stream.error(' ===> Fx datasets "' + flag_static_src_matrix_mean +
+                                 '" is not available in the reference obj')
+                raise IOError('Datasets is mandatory to apply the method. Exit.')
+            else:
+                fx_attrs[flag_fx_matrix_mean] = deepcopy(fx_datasets[flag_static_src_matrix_mean])
 
-            if "training_coefficient" not in list(fx_datasets.keys()):
-                log_stream.error(' ===> Fx datasets "training_coefficient" is not available in the reference obj')
+            if flag_static_src_coeff not in list(fx_datasets.keys()):
+                log_stream.error(' ===> Fx datasets "' + flag_static_src_coeff +
+                                 '" is not available in the reference obj')
                 raise IOError('Datasets is mandatory to apply the method. Exit.')
             else:
-                fx_attrs[flag_fx_coeff] = deepcopy(fx_datasets['training_coefficient'])
+                fx_attrs[flag_fx_coeff] = deepcopy(fx_datasets[flag_static_src_coeff])
 
             if fx_flag in list(self.ancillary_dict_methods.keys()):
                 fx_attrs[flag_fx_param_type] = self.ancillary_dict_methods[fx_flag]['kernel_type']

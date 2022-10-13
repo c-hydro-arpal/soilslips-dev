@@ -2,8 +2,8 @@
 """
 ARPAL Processing Tool - SOIL SLIPS PREDICTORS
 
-__date__ = '20220517'
-__version__ = '1.2.0'
+__date__ = '20221013'
+__version__ = '1.3.0'
 __author__ =
         'Stefania Magri (stefania.magri@arpal.liguria.it',
         'Mauro Quagliati (mauro.quagliati@arpal.liguria.it',
@@ -16,6 +16,7 @@ General command line:
 python3 arpal_soil_slips_predictors_main.py -settings_file configuration.json -time "YYYY-MM-DD HH:MM"
 
 Version(s):
+20221013 (1.3.0) --> Bugs fix to the kernel fx
 20220517 (1.2.0) --> Bugs fix and methods refactor
 20220320 (1.1.0) --> Beta release for operational chain mode
 20220105 (1.0.0) --> Beta release for Jupyter Notebook mode
@@ -44,8 +45,8 @@ log_stream = logging.getLogger(logger_name)
 
 # -------------------------------------------------------------------------------------
 # Algorithm information
-alg_version = '1.2.0'
-alg_release = '2022-05-17'
+alg_version = '1.3.0'
+alg_release = '2022-10-13'
 alg_name = 'SOIL SLIPS PREDICTORS MAIN'
 # Algorithm parameter(s)
 time_format = '%Y-%m-%d %H:%M'

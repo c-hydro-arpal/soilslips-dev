@@ -32,26 +32,39 @@ class DriverTraining:
     # -------------------------------------------------------------------------------------
     # Initialize class
     def __init__(self, src_dict, dst_dict,
-                 flag_training_src_matrix='training_matrix', flag_training_src_coeff='training_coefficient',
+                 flag_training_src_matrix_center='training_matrix_center',
+                 flag_training_src_matrix_max='training_matrix_max',
+                 flag_training_src_matrix_mean='training_matrix_mean',
+                 flag_training_src_coeff='training_coefficient',
                  flag_training_dst='training_datasets',
                  flag_training_updating=True):
 
         self.file_name_tag = 'file_name'
         self.folder_name_tag = 'folder_name'
 
-        self.flag_training_src_matrix = flag_training_src_matrix
+        self.flag_training_src_matrix_center = flag_training_src_matrix_center
+        self.flag_training_src_matrix_max = flag_training_src_matrix_max
+        self.flag_training_src_matrix_mean = flag_training_src_matrix_mean
         self.flag_training_src_coeff = flag_training_src_coeff
         self.flag_training_dst = flag_training_dst
 
         self.flag_training_updating = flag_training_updating
 
-        self.file_name_src_matrix = src_dict[self.flag_training_src_matrix][self.file_name_tag]
-        self.folder_name_src_matrix = src_dict[self.flag_training_src_matrix][self.folder_name_tag]
-        self.file_path_src_matrix = os.path.join(self.folder_name_src_matrix, self.file_name_src_matrix)
+        file_name_tmp = src_dict[self.flag_training_src_matrix_center][self.file_name_tag]
+        folder_name_tmp = src_dict[self.flag_training_src_matrix_center][self.folder_name_tag]
+        self.file_path_src_matrix_center = os.path.join(folder_name_tmp, file_name_tmp)
 
-        self.file_name_src_coeff = src_dict[self.flag_training_src_coeff][self.file_name_tag]
-        self.folder_name_src_coeff = src_dict[self.flag_training_src_coeff][self.folder_name_tag]
-        self.file_path_src_coeff = os.path.join(self.folder_name_src_coeff, self.file_name_src_coeff)
+        file_name_tmp = src_dict[self.flag_training_src_matrix_max][self.file_name_tag]
+        folder_name_tmp = src_dict[self.flag_training_src_matrix_max][self.folder_name_tag]
+        self.file_path_src_matrix_max = os.path.join(folder_name_tmp, file_name_tmp)
+
+        file_name_tmp = src_dict[self.flag_training_src_matrix_mean][self.file_name_tag]
+        folder_name_tmp = src_dict[self.flag_training_src_matrix_mean][self.folder_name_tag]
+        self.file_path_src_matrix_mean = os.path.join(folder_name_tmp, file_name_tmp)
+
+        file_name_tmp = src_dict[self.flag_training_src_coeff][self.file_name_tag]
+        folder_name_tmp = src_dict[self.flag_training_src_coeff][self.folder_name_tag]
+        self.file_path_src_coeff = os.path.join(folder_name_tmp, file_name_tmp)
 
         self.file_name_dst = dst_dict[self.flag_training_dst][self.file_name_tag]
         self.folder_name_dst = dst_dict[self.flag_training_dst][self.folder_name_tag]
@@ -79,7 +92,9 @@ class DriverTraining:
         # Starting info
         log_stream.info(' ----> Organize training information ... ')
 
-        file_path_src_matrix = self.file_path_src_matrix
+        file_path_src_matrix_center = self.file_path_src_matrix_center
+        file_path_src_matrix_max = self.file_path_src_matrix_max
+        file_path_src_matrix_mean = self.file_path_src_matrix_mean
         file_path_src_coeff = self.file_path_src_coeff
         file_path_dst = self.file_path_dst
 
@@ -89,11 +104,26 @@ class DriverTraining:
 
         if not os.path.exists(file_path_dst):
 
-            if os.path.exists(file_path_src_matrix):
-                training_datasets_matrix = self.read_training_datasets(
-                    file_path_src_matrix, file_delimiter=',', file_header=None)
+            if os.path.exists(file_path_src_matrix_center):
+                training_datasets_matrix_center = self.read_training_datasets(
+                    file_path_src_matrix_center, file_delimiter=',', file_header=None)
             else:
-                log_stream.error(' ===> File training matrix "' + file_path_src_matrix + '" does not exist.')
+                log_stream.error(' ===> File training matrix center "' + file_path_src_matrix_center +
+                                 '" does not exist.')
+                raise IOError('File not found. Exit')
+            if os.path.exists(file_path_src_matrix_max):
+                training_datasets_matrix_max = self.read_training_datasets(
+                    file_path_src_matrix_max, file_delimiter=';', file_header=None)
+            else:
+                log_stream.error(' ===> File training matrix max "' + file_path_src_matrix_max +
+                                 '" does not exist.')
+                raise IOError('File not found. Exit')
+            if os.path.exists(file_path_src_matrix_mean):
+                training_datasets_matrix_mean = self.read_training_datasets(
+                    file_path_src_matrix_mean, file_delimiter=';', file_header=None)
+            else:
+                log_stream.error(' ===> File training matrix mean "' + file_path_src_matrix_mean +
+                                 '" does not exist.')
                 raise IOError('File not found. Exit')
 
             if os.path.exists(file_path_src_coeff):
@@ -105,7 +135,9 @@ class DriverTraining:
 
             # Organize training collections
             training_collections = {
-                self.flag_training_src_matrix: training_datasets_matrix,
+                self.flag_training_src_matrix_center: training_datasets_matrix_center,
+                self.flag_training_src_matrix_max: training_datasets_matrix_max,
+                self.flag_training_src_matrix_mean: training_datasets_matrix_mean,
                 self.flag_training_src_coeff: training_datasets_coeff
             }
 
