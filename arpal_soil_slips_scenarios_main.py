@@ -2,8 +2,8 @@
 """
 ARPAL Processing Tool - SOIL SLIPS SCENARIOS
 
-__date__ = '20220413'
-__version__ = '2.0.0'
+__date__ = '20230118'
+__version__ = '2.0.1'
 __author__ =
         'Fabio Delogu (fabio.delogu@cimafoundation.org',
         'Michele Cicoria (michele.cicoria@arpal.liguria.it)',
@@ -15,6 +15,7 @@ General command line:
 python3 arpal_soil_slips_scenarios_main.py -settings_file configuration.json -time "YYYY-MM-DD HH:MM"
 
 Version(s):
+20230118 (2.0.1) --> Add support to xls and xlsx weather stations file
 20220413 (2.0.0) --> Pre-operational release
 20210515 (1.4.0) --> Add rain maps limits checks, add unique scenarios .csv file, fix rain peaks computations
 20210412 (1.3.0) --> Add dependencies management, add forcing point creation for saving rain peaks
@@ -51,8 +52,8 @@ log_stream = logging.getLogger(logger_name)
 
 # -------------------------------------------------------------------------------------
 # Algorithm information
-alg_version = '2.0.0'
-alg_release = '2022-04-13'
+alg_version = '2.0.1'
+alg_release = '2023-01-18'
 alg_name = 'SOIL SLIPS SCENARIOS MAIN'
 # Algorithm parameter(s)
 time_format = '%Y-%m-%d %H:%M'

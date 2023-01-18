@@ -10,12 +10,12 @@
     },
     "flags": {
       "__comment__": "running_mode values: organizer, analyzer, publisher",
-      "running_mode": ["organizer","analyzer","publisher"],
-      "updating_static_ancillary_grid": true,
-      "updating_static_ancillary_point_weather_stations": true,
-      "updating_static_ancillary_point_soil_slips": true,
+      "running_mode": ["organizer"],
+      "updating_static_ancillary_grid": false,
+      "updating_static_ancillary_point_weather_stations": false,
+      "updating_static_ancillary_point_soil_slips": false,
       "updating_dynamic_ancillary_rain": true,
-      "updating_dynamic_ancillary_sm": true,
+      "updating_dynamic_ancillary_sm": false,
       "updating_dynamic_destination_indicators": true,
       "updating_dynamic_destination_scenarios": true
     },
@@ -38,7 +38,7 @@
       },
       "graph": {
         "filter_season": true,
-        "filter_event_min": 0,
+        "filter_event_min": 1,
         "filter_event_max": null
       },
       "group" : {
@@ -129,9 +129,9 @@
       "catchment_name": "string_catchment",
       "run_datetime": "%Y%m%d",
       "run_sub_path_time": "%Y/%m/%d/",
-      "source_rain_sub_path_time": "%Y/%m/%d/",
-      "source_rain_datetime": "%Y%m%d%H%M",
-      "source_sm_sub_path_time": "%Y/%m/%d/",
+      "source_rain_sub_path_time": "%Y",
+      "source_rain_datetime": "%Y",
+      "source_sm_sub_path_time": "%Y/%m/",
       "source_sm_datetime": "%Y%m%d%H%M",
       "ancillary_rain_sub_path_time": "%Y/%m/%d/",
       "ancillary_rain_datetime": "%Y%m%d%H%M",
@@ -182,15 +182,15 @@
           "catchment": {
             "primary_data": {
               "terrain_data": {
-                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_realtime/{catchment_name}Domain/",
+                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_history/{catchment_name}Domain/",
                 "file_name": "{catchment_name}Domain.dem.txt"
               },
               "cn_data": {
-                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_realtime/{catchment_name}Domain/",
+                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_history/{catchment_name}Domain/",
                 "file_name": "{catchment_name}Domain.cn.txt"
               },
               "channels_network_data": {
-                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_realtime/{catchment_name}Domain/",
+                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_history/{catchment_name}Domain/",
                 "file_name": "{catchment_name}Domain.choice.txt"
               }
             }
@@ -250,15 +250,15 @@
           "catchment": {
             "primary_data": {
               "terrain_data": {
-                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_realtime/{catchment_name}Domain/",
+                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_history/{catchment_name}Domain/",
                 "file_name": "geo_catchment_{catchment_name}_terrain.workspace"
               },
               "cn_data": {
-                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_realtime/{catchment_name}Domain/",
+                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_history/{catchment_name}Domain/",
                 "file_name": "geo_catchment_{catchment_name}_cn.workspace"
               },
               "channels_network_data": {
-                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_realtime/{catchment_name}Domain/",
+                "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/catchments_history/{catchment_name}Domain/",
                 "file_name": "geo_catchment_{catchment_name}_channels_network.workspace"
               }
             }
@@ -297,17 +297,17 @@
       },
       "source": {
         "rain_data": {
-          "__comment__": "file_type: grid, point",
-          "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_dynamic/source/rain_grid_tiff/{source_rain_sub_path_time}/",
-          "file_name": "Rain_{source_rain_datetime}.tif",
-          "obj_type": "grid",
+          "__comment__": "file_type: grid_binary, point_csv, point_xlsx",
+          "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_dynamic/source/rain_point_xlsx/{source_rain_sub_path_time}/",
+          "file_name": "{month_name}_{source_rain_datetime}.xlsx",
+          "obj_type": "point_xlsx",
           "obj_geo_reference": "region:primary_data:rain_data"
         },
         "soil_moisture_data": {
           "__comment__": "file_type: grid_nc [hmc.output-grid.{source_sm_datetime}.nc.gz], grid_binary [{catchment_name}DomainV_{source_sm_datetime}.gz]",
-          "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/archive_nc/{catchment_name}Domain/weather_stations_realtime/{source_sm_sub_path_time}/gridded/",
-          "file_name": "hmc.output-grid.{source_sm_datetime}.nc.gz",
-          "obj_type": "grid_nc",
+          "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_dynamic/source/soil_moisture_binary/{catchment_name}Domain/{source_sm_sub_path_time}/",
+          "file_name": "{catchment_name}DomainV_{source_sm_datetime}.gz",
+          "obj_type": "grid_binary",
           "obj_geo_reference": "region:primary_data:soil_moisture_data"
         }
       },
@@ -349,14 +349,14 @@
   },
   "log": {
     "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/log/",
-    "file_name": "soil_slips_scenarios_realtime_log.txt"
+    "file_name": "soil_slips_scenarios_history_log.txt"
   },
   "time": {
     "time_now": null,
     "time_period": 3000,
     "time_frequency": "D",
     "time_rounding": "D",
-    "time_start": "2022-05-02 03:23",
-    "time_end": "2022-05-02 09:42"
+    "time_start": "2020-01-01 00:00",
+    "time_end": "2020-01-10 00:00"
   }
 }

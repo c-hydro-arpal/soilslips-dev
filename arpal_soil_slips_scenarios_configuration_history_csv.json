@@ -4,7 +4,7 @@
       "title": "Running tool for soil slips scenarios",
       "web-site": "",
       "source": "Python library developed by ARPAL and CIMA Research Foundation",
-      "history": "2.0.0 [20220413]",
+      "history": "2.0.1 [20230118]",
       "project-info": "arpal",
       "algorithm": "Algorithm developed by ARPAL and CIMA Research Foundation"
     },

@@ -20,6 +20,7 @@ from copy import deepcopy
 from lib_utils_system import fill_tags2string, make_folder
 
 from lib_data_io_csv_scenarios import read_file_csv
+from lib_data_io_xlsx import read_file_xlsx
 
 from lib_utils_data_table import read_table_obj, select_table_obj, get_table_value
 from lib_utils_data_grid_rain import interpolate_rain_points2map, reproject_rain_source2map, \
@@ -109,6 +110,10 @@ class DriverForcing:
         self.flag_ancillary_updating = flag_ancillary_updating
 
         self.file_path_processed = []
+
+        # variable(s) to keep in memory the active filename and dataframe
+        self.file_name_active = None
+        self.file_dframe_active = None
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
@@ -224,6 +229,47 @@ class DriverForcing:
                             scale_factor_longitude=self.table_src['file_scale_factor_longitude'],
                             scale_factor_latitude=self.table_src['file_scale_factor_latitude'],
                             scale_factor_data=self.table_src['file_scale_factor_data'])
+
+                        # Filter data using variable limits (if defined)
+                        if var_min is not None:
+                            file_dframe = file_dframe[(file_dframe['data'] >= var_min)]
+                        if var_max is not None:
+                            file_dframe = file_dframe[(file_dframe['data'] <= var_max)]
+
+                        if file_dframe is not None:
+                            file_time_src = file_dframe.index.unique()
+                        else:
+                            file_time_src = None
+
+                        file_obj = deepcopy(file_dframe)
+
+                    elif file_path_src.endswith('.xlsx'):
+
+                        # manage the active filename and dataframe
+                        if self.file_name_active is None:
+                            self.file_name_active = deepcopy(file_path_src)
+                            file_dframe_active = None
+                        elif self.file_name_active != file_path_src:
+                            self.file_name_active = deepcopy(file_path_src)
+                            file_dframe_active = None
+                        elif self.file_name_active == file_path_src:
+                            file_dframe_active = deepcopy(self.file_dframe_active)
+                        else:
+                            log_stream.error(' ===> Checking active data source mode is not supported')
+                            raise NotImplemented('Case not implemented yet')
+
+                        # Read datasets point file
+                        file_dframe, file_dframe_active = read_file_xlsx(
+                            file_path_src, datetime_step,
+                            file_header=self.table_src['file_columns_src'],
+                            scale_factor_longitude=self.table_src['file_scale_factor_longitude'],
+                            scale_factor_latitude=self.table_src['file_scale_factor_latitude'],
+                            scale_factor_data=self.table_src['file_scale_factor_data'],
+                            file_dframe_active=file_dframe_active)
+
+                        # Update active dataframe
+                        if self.file_dframe_active is None:
+                            self.file_dframe_active = deepcopy(file_dframe_active)
 
                         # Filter data using variable limits (if defined)
                         if var_min is not None:

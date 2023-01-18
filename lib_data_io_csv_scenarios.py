@@ -93,7 +93,7 @@ def read_file_csv(file_name, file_time=None, file_header=None, file_format=None,
         log_stream.error(' ===> Parser of csv file "' + file_name + '" failed')
         raise IOError('Check the format of csv file')
 
-    #values = [float(i) for i in file_dframe['data'].values]
+    # values = [float(i) for i in file_dframe['data'].values]
 
     file_dframe = file_dframe.reset_index()
     file_dframe = file_dframe.set_index('time')
