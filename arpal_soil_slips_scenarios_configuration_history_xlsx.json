@@ -15,7 +15,7 @@
       "updating_static_ancillary_point_weather_stations": false,
       "updating_static_ancillary_point_soil_slips": false,
       "updating_dynamic_ancillary_rain": true,
-      "updating_dynamic_ancillary_sm": false,
+      "updating_dynamic_ancillary_sm": true,
       "updating_dynamic_destination_indicators": true,
       "updating_dynamic_destination_scenarios": true
     },

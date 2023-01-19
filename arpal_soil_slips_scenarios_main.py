@@ -3,7 +3,7 @@
 ARPAL Processing Tool - SOIL SLIPS SCENARIOS
 
 __date__ = '20230118'
-__version__ = '2.0.1'
+__version__ = '2.2.0'
 __author__ =
         'Fabio Delogu (fabio.delogu@cimafoundation.org',
         'Michele Cicoria (michele.cicoria@arpal.liguria.it)',

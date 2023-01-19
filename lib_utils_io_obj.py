@@ -81,6 +81,21 @@ def create_darray_2d(data, geo_x, geo_y, geo_1d=True, time=None,
         if geo_y.shape.__len__() == 2:
             geo_y = geo_y[:, 0]
 
+        if isinstance(geo_x, xr.DataArray):
+            geo_x = geo_x.values
+        elif isinstance(geo_x, np.ndarray):
+            pass
+        else:
+            log_stream.error(' ===> Geographical object x format is not supported')
+            raise NotImplemented('Case not implemented yet')
+        if isinstance(geo_y, xr.DataArray):
+            geo_y = geo_y.values
+        elif isinstance(geo_y, np.ndarray):
+            pass
+        else:
+            log_stream.error(' ===> Geographical object y format is not supported')
+            raise NotImplemented('Case not implemented yet')
+
         if time is None:
             data_da = xr.DataArray(data,
                                    dims=dims_order,
@@ -123,6 +138,21 @@ def create_darray_3d(data, time, geo_x, geo_y, geo_1d=True,
             geo_x = geo_x[0, :]
         if geo_y.shape.__len__() == 2:
             geo_y = geo_y[:, 0]
+
+        if isinstance(geo_x, xr.DataArray):
+            geo_x = geo_x.values
+        elif isinstance(geo_x, np.ndarray):
+            pass
+        else:
+            log_stream.error(' ===> Geographical object x format is not supported')
+            raise NotImplemented('Case not implemented yet')
+        if isinstance(geo_y, xr.DataArray):
+            geo_y = geo_y.values
+        elif isinstance(geo_y, np.ndarray):
+            pass
+        else:
+            log_stream.error(' ===> Geographical object y format is not supported')
+            raise NotImplemented('Case not implemented yet')
 
         data_da = xr.DataArray(data,
                                dims=dims_order,

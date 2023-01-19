@@ -13,7 +13,7 @@ import logging
 import pandas as pd
 from copy import deepcopy
 
-from lib_info_args import logger_name_predictors as logger_name
+from lib_info_args import logger_name_scenarios as logger_name
 
 # Logging
 log_stream = logging.getLogger(logger_name)
