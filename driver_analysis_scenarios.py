@@ -363,7 +363,22 @@ class DriverAnalysis:
                     scenarios_time, scenarios_dict = [], {}
                     for file_path in file_path_indicators:
 
+                        log_stream.info(' ------> Get datasets file for reference area "' + file_path + '" ... ')
+
                         file_obj = read_obj(file_path)
+
+                        # check file version keys
+                        if 'data' in list(file_obj.keys()) and 'event' in list(file_obj.keys()):
+                            # file keys new version
+                            pass
+                        elif 'indicators_data' in list(file_obj.keys()) and 'indicators_event' in list(file_obj.keys()):
+                            # file keys old version
+                            file_obj['data'] = file_obj.pop('indicators_data')
+                            file_obj['event'] = file_obj.pop('indicators_event')
+                            file_obj['domain'] = file_obj.pop('alert_area')
+                        else:
+                            log_stream.error(' ===> File indicators keys are not supported')
+                            raise NotImplemented('Case not implemented yet')
 
                         obj_domain = file_obj[self.template_indicators_domain]
                         obj_time = file_obj[self.template_indicators_time]
@@ -387,8 +402,12 @@ class DriverAnalysis:
                                     field_tmp.append(field_value)
                                     scenarios_dict[field_key] = field_tmp
 
+                        log_stream.info(' ------> Get datasets file for reference area "' + file_path + '" ... ')
+
+                    log_stream.info(' ------> Create datasets merged ... ')
                     scenarios_df = pd.DataFrame(index=scenarios_time, data=scenarios_dict)
                     scenarios_df.index.name = self.template_time_index
+                    log_stream.info(' ------> Create datasets merged ... DONE')
 
                     log_stream.info(' -----> Get datasets for reference area "' + group_key + '" ... DONE')
                 else:

@@ -57,12 +57,37 @@ def collect_point_data(point_dframe_src, point_group_obj, point_time_format='%Y-
         group_threshold = group_data[point_group_threshold_tag_src]
         group_index = group_data[point_group_index_tag_src]
 
-        point_selection = point_dframe_src.loc[point_dframe_src[point_dframe_alert_area_tag] == group_selection]
+        # get points datasets filtered by alert area name
+        if point_dframe_alert_area_tag in list(point_dframe_src.columns):
+            point_selection = point_dframe_src.loc[point_dframe_src[point_dframe_alert_area_tag] == group_selection]
+        elif point_dframe_alert_area_tag.lower() in list(point_dframe_src.columns):
+            log_stream.warning(' ===> Tag "' + point_dframe_alert_area_tag +
+                               '" is available but in lower case format "' + point_dframe_alert_area_tag.lower() + '"')
+            point_selection = point_dframe_src.loc[point_dframe_src[point_dframe_alert_area_tag.lower()] == group_selection]
+            # update the tag in lower case
+            point_dframe_alert_area_tag = point_dframe_alert_area_tag.lower()
+        else:
+            log_stream.error(' ===> Tag "' + point_dframe_alert_area_tag +  '" is mandatory and not included in the soil slips shapefile')
+            raise RuntimeError('Check your soil slips shapefile for the requested column')
+
         # geo_point_selection = geo_point_selection.reset_index()
         # geo_point_selection = geo_point_selection.set_index(self.column_db_tag_time)
 
-        time_point_selection = pd.DatetimeIndex(
-            point_selection[point_dframe_time_tag].values).unique().sort_values()
+        # get points time sorted
+        if point_dframe_time_tag in list(point_dframe_src.columns):
+            time_point_selection = pd.DatetimeIndex(
+                point_selection[point_dframe_time_tag].values).unique().sort_values()
+        elif point_dframe_time_tag.lower() in list(point_dframe_src.columns):
+            log_stream.warning(' ===> Tag "' + point_dframe_time_tag +
+                               '" is available but in lower case format "' + point_dframe_time_tag.lower() + '"')
+            time_point_selection = pd.DatetimeIndex(
+                point_selection[point_dframe_time_tag.lower()].values).unique().sort_values()
+            # update the tag in lower case
+            point_dframe_time_tag = point_dframe_time_tag.lower()
+        else:
+            log_stream.error(' ===> Tag "' + point_dframe_time_tag +  '" is mandatory and not included in the soil slips shapefile')
+            raise RuntimeError('Check your soil slips shapefile for the requested column')
+
 
         point_list_n, point_list_feature, point_list_threshold, point_list_index = [], [], [], []
         for time_point_step in time_point_selection:

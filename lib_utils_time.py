@@ -13,6 +13,7 @@ import logging
 import re
 import pandas as pd
 
+from copy import deepcopy
 from datetime import date
 
 from lib_info_args import logger_name_scenarios
@@ -51,22 +52,22 @@ def set_time(time_run_args=None, time_run_file=None, time_format='%Y-%m-%d %H:$M
         log_stream.info(' -----> Time info defined by "time_run" argument ... ')
 
         if time_run_args is not None:
-            time_run = time_run_args
-            log_stream.info(' ------> Time ' + time_run + ' set by argument')
+            time_tmp = time_run_args
+            log_stream.info(' ------> Time ' + time_tmp + ' set by argument')
         elif (time_run_args is None) and (time_run_file is not None):
-            time_run = time_run_file
-            logging.info(' ------> Time ' + time_run + ' set by user')
+            time_tmp = time_run_file
+            logging.info(' ------> Time ' + time_tmp + ' set by user')
         elif (time_run_args is None) and (time_run_file is None):
             time_now = date.today()
-            time_run = time_now.strftime(time_format)
-            log_stream.info(' ------> Time ' + time_run + ' set by system')
+            time_tmp = time_now.strftime(time_format)
+            log_stream.info(' ------> Time ' + time_tmp + ' set by system')
         else:
             log_stream.info(' ----> Set time period ... FAILED')
             log_stream.error(' ===> Argument "time_run" is not correctly set')
             raise IOError('Time type or format is wrong')
 
-        time_tmp = pd.Timestamp(time_run)
-        time_run = time_tmp.floor(time_rounding)
+        time_run = pd.Timestamp(time_tmp)
+        time_run = time_run.floor(time_rounding)
 
         if time_period > 0:
             time_range = pd.date_range(end=time_run, periods=time_period, freq=time_frequency)
@@ -89,9 +90,22 @@ def set_time(time_run_args=None, time_run_file=None, time_format='%Y-%m-%d %H:$M
             log_stream.error(' ===> Variable "time_start" is greater than "time_end". Check your settings file.')
             raise RuntimeError('Time_Range is not correctly defined.')
 
-        time_now = date.today()
-        time_run = time_now.strftime(time_format)
-        time_run = pd.Timestamp(time_run)
+        if time_run_args is not None:
+            time_tmp = deepcopy(time_run_args)
+            log_stream.info(' ------> Time ' + time_tmp + ' set by argument')
+        elif (time_run_args is None) and (time_run_file is not None):
+            time_tmp = deepcopy(time_run_file)
+            logging.info(' ------> Time ' + time_tmp + ' set by user')
+        elif (time_run_args is None) and (time_run_file is None):
+            time_now = date.today()
+            time_tmp = time_now.strftime(time_format)
+            log_stream.info(' ------> Time ' + time_tmp + ' set by system')
+        else:
+            log_stream.info(' ----> Set time period ... FAILED')
+            log_stream.error(' ===> Argument "time_run" is not correctly set')
+            raise IOError('Time type or format is wrong')
+
+        time_run = pd.Timestamp(time_tmp)
         time_run = time_run.floor(time_rounding)
         time_range = pd.date_range(start=time_run_file_start, end=time_run_file_end, freq=time_frequency)
 
