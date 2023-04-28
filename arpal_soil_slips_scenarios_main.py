@@ -132,6 +132,7 @@ def main():
     driver_data_geo_point_soil_slips = DriverGeoPoint_SoilSlips(
         src_dict=data_settings['data']['static']['source'],
         dst_dict=data_settings['data']['static']['destination'],
+        collections_data_geo=geo_grid_collection,
         collections_data_group=data_settings['algorithm']['ancillary']['group'],
         flag_geo_updating=data_settings['algorithm']['flags']['updating_static_ancillary_point_soil_slips'])
     geo_point_collection_soil_slips = driver_data_geo_point_soil_slips.organize_data()

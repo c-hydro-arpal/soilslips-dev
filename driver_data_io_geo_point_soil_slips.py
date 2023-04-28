@@ -14,8 +14,10 @@ import os
 
 from lib_data_io_pickle import read_obj, write_obj
 from lib_utils_system import make_folder
+from lib_utils_io_obj import filter_obj_variables, filter_obj_datasets
 
-from lib_utils_data_point_soil_slips import read_point_file, collect_point_data
+from lib_utils_geo import km_2_degree
+from lib_utils_data_point_soil_slips import read_point_file, collect_point_data, join_point_and_grid
 
 from lib_info_args import logger_name_scenarios as logger_name
 
@@ -34,9 +36,9 @@ class DriverGeoPoint:
     # -------------------------------------------------------------------------------------
     # Initialize class
     def __init__(self, src_dict, dst_dict=None,
-                 collections_data_group=None,
+                 collections_data_geo=None, collections_data_group=None,
                  flag_point_data_src='soil_slips', flag_point_data_dst='soil_slips',
-                 flag_geo_updating=True):
+                 flag_geo_updating=True, search_radius_km=5):
 
         self.flag_point_data_src = flag_point_data_src
         self.flag_point_data_dst = flag_point_data_dst
@@ -57,10 +59,21 @@ class DriverGeoPoint:
 
         self.column_db_tag_alert_area = 'ZONA_ALLER'
         self.column_db_tag_time = 'DATA'
+        self.column_db_point_code_tag = 'id_frana'
+        self.column_db_point_name_tag = 'id_frana'
+        self.column_db_point_longitude_tag = 'lon'
+        self.column_db_point_latitude_tag = 'lat'
 
+        self.alert_area_tag = 'alert_area'
+        self.alert_area_pivot_name_vector = 'alert_area:vector_data'
+        self.alert_area_pivot_name_mask = 'alert_area:mask_data'
+
+        self.geo_data = collections_data_geo
         self.group_data = collections_data_group
 
         self.flag_geo_updating = flag_geo_updating
+        # search radius (to define searched area)
+        self.search_radius_km = search_radius_km
 
         self.file_name_src = src_dict[self.flag_point_data_src][self.point_db_data_tag][self.file_name_tag]
         self.folder_name_src = src_dict[self.flag_point_data_src][self.point_db_data_tag][self.folder_name_tag]
@@ -70,7 +83,20 @@ class DriverGeoPoint:
         self.folder_name_dst = dst_dict[self.flag_point_data_dst][self.point_db_data_tag][self.folder_name_tag]
         self.file_path_dst = os.path.join(self.folder_name_dst, self.file_name_dst)
 
+        # select alert area vector and mask dataset(s)
+        vars_alert_area_vector = filter_obj_variables(
+            list(self.geo_data[self.alert_area_tag].keys()), self.alert_area_pivot_name_vector)
+        vars_alert_area_mask = filter_obj_variables(
+            list(self.geo_data[self.alert_area_tag].keys()), self.alert_area_pivot_name_mask)
+
+        self.geo_alert_area_vector = filter_obj_datasets(self.geo_data[self.alert_area_tag], vars_alert_area_vector)
+        self.geo_alert_area_mask = filter_obj_datasets(self.geo_data[self.alert_area_tag], vars_alert_area_mask)
+
         self.time_format = '%Y-%m-%d'
+
+        # define radius for searching object(s)
+        self.radius_distance_max = km_2_degree(self.search_radius_km)
+        self.radius_distance_inf = float("inf")
 
     # -------------------------------------------------------------------------------------
 
@@ -93,7 +119,20 @@ class DriverGeoPoint:
         log_stream.info(' -----> Define registry points data ... ')
         if not os.path.exists(file_path_dst):
 
+            # read the soil-slips collections
             obj_point_registry = read_point_file(file_path_src)
+
+            # fill the soil-slips collections
+            obj_point_registry = join_point_and_grid(
+                obj_point_registry, self.geo_alert_area_vector,
+                max_distance=self.radius_distance_max,
+                point_code_tag=self.column_db_point_code_tag,
+                point_area_tag=self.column_db_tag_alert_area,
+                point_longitude_tag=self.column_db_point_longitude_tag,
+                point_latitude_tag=self.column_db_point_latitude_tag
+            )
+
+            # collect and organize the soil-slips collections
             obj_point_collection = collect_point_data(
                 obj_point_registry, group_data,
                 point_time_format=self.time_format,
@@ -109,6 +148,7 @@ class DriverGeoPoint:
                 point_group_feature_tag_dst=self.structure_group_tag_name_dst,
             )
 
+            # save the soil-slips collections
             folder_name_dst, file_name_dst = os.path.split(file_path_dst)
             make_folder(folder_name_dst)
             write_obj(file_path_dst, obj_point_collection)
@@ -116,7 +156,7 @@ class DriverGeoPoint:
             log_stream.info(' -----> Define registry points data ... DONE')
         else:
 
-            # Read soil slips collections from disk
+            # read soil-slips collections from disk
             obj_point_collection = read_obj(file_path_dst)
             log_stream.info(' -----> Define registry points data ... SKIPPED. Datasets was previously computed.')
 

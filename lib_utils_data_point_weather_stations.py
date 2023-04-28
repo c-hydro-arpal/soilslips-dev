@@ -17,9 +17,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 from shapely.geometry import Point
 
-
 from lib_data_io_csv_weather_stations import read_file_point
-
 
 from lib_info_args import logger_name_scenarios as logger_name
 

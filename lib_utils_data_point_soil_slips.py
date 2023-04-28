@@ -14,6 +14,10 @@ import os
 import pandas as pd
 import numpy as np
 
+from copy import deepcopy
+
+from shapely.geometry import Point
+
 from pandas.tseries import offsets
 
 from lib_data_io_shp import read_file_shp
@@ -22,6 +26,11 @@ from lib_info_args import logger_name_scenarios as logger_name
 
 # Logging
 log_stream = logging.getLogger(logger_name)
+
+# map dictionary
+alert_area_map = {
+    'alert_area_a': 'A', 'alert_area_b': 'B',
+    'alert_area_c': 'C', 'alert_area_d': 'D', 'alert_area_e': 'E'}
 #######################################################################################
 
 
@@ -37,6 +46,85 @@ def read_point_file(file_name):
 
     return point_dframe
 
+# -------------------------------------------------------------------------------------
+
+
+# -------------------------------------------------------------------------------------
+# Method to join point and its grid
+def join_point_and_grid(point_dframe_in, polygons_collections,
+                        max_distance=0.01,
+                        point_code_tag='code', point_area_tag='alert_area',
+                        point_longitude_tag='longitude', point_latitude_tag='latitude',
+                        point_delimiter_tag=':'):
+
+    log_stream.info(' ------> Assign "' + point_area_tag + '" for soil slips with undefined value ... ')
+
+    point_dframe_out = deepcopy(point_dframe_in)
+    if (point_area_tag.lower() in point_dframe_in.columns) or (point_area_tag in point_dframe_in.columns):
+
+        if point_area_tag in point_dframe_in.columns:
+            select_dframe = point_dframe_in.loc[point_dframe_in[point_area_tag].isnull()]
+        elif point_area_tag.lower() in point_dframe_in.columns:
+            log_stream.warning(' ===> Tag "' + point_area_tag +
+                               '" is available but in lower case format "' + point_area_tag.lower() + '"')
+            select_dframe = point_dframe_in.loc[point_dframe_in[point_area_tag.lower()].isnull()]
+        else:
+            log_stream.error(' ===> Tag "' + point_area_tag +
+                             '" is mandatory and unexpected error occurred in the script')
+            raise RuntimeError('Check your soil slips shapefile for the requested column')
+
+        if not select_dframe.empty:
+
+            point_code = select_dframe[point_code_tag].values
+            point_x = select_dframe[point_longitude_tag].values
+            point_y = select_dframe[point_latitude_tag].values
+
+            point_domain_array = np.array([None] * select_dframe.shape[0], dtype=object)
+            for polygon_key, polygon_fields in polygons_collections.items():
+
+                polygon_geometry = list(polygon_fields['geometry'].values)[0]
+
+                for i, (code, x, y) in enumerate(zip(point_code, point_x, point_y)):
+                    var_point = Point(x, y)
+                    if polygon_geometry.contains(var_point):
+                        polygon_alert_area = polygon_key.split(point_delimiter_tag)[2]
+                        if polygon_alert_area in list(alert_area_map.keys()):
+                            log_stream.info(' -------> Point Code "' + str(code) +
+                                            '" joins to alert area ...  ')
+
+                            value_alert_area = alert_area_map[polygon_alert_area]
+                            point_domain_array[i] = value_alert_area
+
+                            point_dframe_out.loc[point_dframe_out[point_code_tag] == code, point_area_tag.lower()] = value_alert_area
+
+                            log_stream.info(' -------> Point Code "' + str(code) +
+                                            '" joins to alert area ... "' + value_alert_area + '"')
+
+            check_dframe = point_dframe_out.loc[point_dframe_out[point_area_tag.lower()].isnull()]
+            if check_dframe.empty:
+                log_stream.info(' ------> Assign "' + point_area_tag +
+                                '" for soil slips with undefined value ... DONE. '
+                                'All the soil slips have the "' + point_area_tag +
+                                '" defined by automatic detection or user.')
+            else:
+                log_stream.info(' ------> Assign "' + point_area_tag +
+                                '" for soil slips with undefined value ... PARTIALLY DONE. '
+                                'Not all the soil slips have the "' + point_area_tag +
+                                '" defined by automatic detection or user.')
+
+        else:
+            log_stream.info(' ------> Assign "' + point_area_tag +
+                            '" for soil slips with undefined value ... SKIPPED. '
+                            'All the soil slips have the "' + point_area_tag + '" defined by user.')
+
+    else:
+        log_stream.info(' ------> Assign "' + point_area_tag +
+                        '" for soil slips with undefined value ... FAILED.')
+        log_stream.error(' ===> Tag "' + point_area_tag +
+                         '" is mandatory and not included in the soil slips shapefile')
+        raise RuntimeError('Check your soil slips shapefile for the requested column')
+
+    return point_dframe_out
 # -------------------------------------------------------------------------------------
 
 
@@ -67,7 +155,8 @@ def collect_point_data(point_dframe_src, point_group_obj, point_time_format='%Y-
             # update the tag in lower case
             point_dframe_alert_area_tag = point_dframe_alert_area_tag.lower()
         else:
-            log_stream.error(' ===> Tag "' + point_dframe_alert_area_tag +  '" is mandatory and not included in the soil slips shapefile')
+            log_stream.error(' ===> Tag "' + point_dframe_alert_area_tag +
+                             '" is mandatory and not included in the soil slips shapefile')
             raise RuntimeError('Check your soil slips shapefile for the requested column')
 
         # geo_point_selection = geo_point_selection.reset_index()
@@ -87,7 +176,6 @@ def collect_point_data(point_dframe_src, point_group_obj, point_time_format='%Y-
         else:
             log_stream.error(' ===> Tag "' + point_dframe_time_tag +  '" is mandatory and not included in the soil slips shapefile')
             raise RuntimeError('Check your soil slips shapefile for the requested column')
-
 
         point_list_n, point_list_feature, point_list_threshold, point_list_index = [], [], [], []
         for time_point_step in time_point_selection:

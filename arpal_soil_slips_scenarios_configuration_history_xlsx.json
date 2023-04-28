@@ -10,7 +10,7 @@
     },
     "flags": {
       "__comment__": "running_mode values: organizer, analyzer, publisher",
-      "running_mode": ["organizer"],
+      "running_mode": ["organizer","analyzer"],
       "updating_static_ancillary_grid": false,
       "updating_static_ancillary_point_weather_stations": false,
       "updating_static_ancillary_point_soil_slips": false,
@@ -354,9 +354,9 @@
   "time": {
     "time_now": null,
     "time_period": 3000,
-    "time_frequency": "D",
-    "time_rounding": "D",
-    "time_start": "2020-01-01 00:00",
-    "time_end": "2020-01-10 00:00"
+    "time_frequency": "H",
+    "time_rounding": "H",
+    "time_start": null,
+    "time_end": null
   }
 }
