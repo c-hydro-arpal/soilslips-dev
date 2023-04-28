@@ -174,27 +174,40 @@ def collect_point_data(point_dframe_src, point_group_obj, point_time_format='%Y-
             # update the tag in lower case
             point_dframe_time_tag = point_dframe_time_tag.lower()
         else:
-            log_stream.error(' ===> Tag "' + point_dframe_time_tag +  '" is mandatory and not included in the soil slips shapefile')
+            log_stream.error(' ===> Tag "' + point_dframe_time_tag +
+                             '" is mandatory and not included in the soil slips shapefile')
             raise RuntimeError('Check your soil slips shapefile for the requested column')
 
-        point_list_n, point_list_feature, point_list_threshold, point_list_index = [], [], [], []
-        for time_point_step in time_point_selection:
-            time_str_step = time_point_step.strftime(point_time_format)
+        point_list_n, point_list_feature, point_list_threshold, point_list_index, point_list_time = [], [], [], [], []
+        for time_point_id, time_point_step in enumerate(time_point_selection):
 
-            point_step = point_selection.loc[point_selection[point_dframe_time_tag] == time_str_step]
-            point_threshold = find_point_category(point_step.shape[0], group_threshold)
-            point_index = find_point_value(point_threshold, group_index)
+            if not pd.isnull(time_point_step):
+                time_str_step = time_point_step.strftime(point_time_format)
 
-            point_list_n.append(point_step.shape[0])
-            point_list_feature.append(point_step)
-            point_list_threshold.append(point_threshold)
-            point_list_index.append(point_index)
+                point_step = point_selection.loc[point_selection[point_dframe_time_tag] == time_str_step]
+                point_threshold = find_point_category(point_step.shape[0], group_threshold)
+                point_index = find_point_value(point_threshold, group_index)
+
+                point_list_n.append(point_step.shape[0])
+                point_list_feature.append(point_step)
+                point_list_threshold.append(point_threshold)
+                point_list_index.append(point_index)
+
+                point_list_time.append(time_point_step)
+
+            else:
+                log_stream.warning(
+                    ' ===> Time id  "' + str(time_point_id) + '" for the group "' + group_key +
+                    '" is defined by NatType; the soil-slips will be not insert in the selected dataset.'
+                    'Check your database to delete or complete this record!')
 
         point_data = {point_group_n_tag_dst: point_list_n, point_group_threshold_tag_dst: point_list_threshold,
                       point_group_index_tag_dst: point_list_index,
                       point_group_feature_tag_dst: point_list_feature}
 
-        point_dframe_dst = pd.DataFrame(point_data, index=time_point_selection)
+        point_time = pd.DatetimeIndex(point_list_time)
+
+        point_dframe_dst = pd.DataFrame(point_data, index=point_time)
 
         points_collections[group_key] = {}
         points_collections[group_key] = point_dframe_dst

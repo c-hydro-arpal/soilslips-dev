@@ -145,7 +145,7 @@ class DriverGeoPoint:
                 point_group_name_tag_dst=self.structure_group_tag_name_dst,
                 point_group_threshold_tag_dst=self.structure_group_tag_threshold_dst,
                 point_group_index_tag_dst=self.structure_group_tag_index_dst,
-                point_group_feature_tag_dst=self.structure_group_tag_name_dst,
+                point_group_feature_tag_dst=self.structure_group_tag_features_dst,
             )
 
             # save the soil-slips collections
