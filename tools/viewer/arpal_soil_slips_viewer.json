@@ -151,7 +151,7 @@
   },
   "time": {
     "time_reference": null,
-    "time_period": 1,
+    "time_period": 3,
     "time_frequency": "D",
     "time_rounding": "D",
     "time_start": null,

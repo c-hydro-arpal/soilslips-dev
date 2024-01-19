@@ -39,18 +39,14 @@ class DriverData:
 
     # -------------------------------------------------------------------------------------
     # initialize class
-    def __init__(self, time_run, time_range,
+    def __init__(self, time_run,
                  static_obj, source_dict, ancillary_dict, destination_dict=None,
                  flags_dict=None, info_dict=None, template_dict=None, tmp_dict=None):
 
         # time object(s)
         self.time_run = time_run
-        self.time_range = time_range
 
-        self.time_start = pd.DatetimeIndex([time_range[0], time_range[-1]]).min()
-        self.time_end = pd.DatetimeIndex([time_range[0], time_range[-1]]).max()
-
-        self.time_end, self.time_start = time_range[0], time_range[-1]
+        # static object(s)
         self.static_obj = static_obj
 
         # args object(s)
@@ -281,7 +277,8 @@ class DriverData:
     def view_data(self, point_data_collections):
 
         # method start info
-        log_stream.info(' ----> View time-series object(s) ... ')
+        time_str = self.time_run.strftime('%Y-%d-%m')
+        log_stream.info(' ----> View time-series object(s) [' + time_str + '] ... ')
 
         # get time
         time_run = self.time_run
@@ -322,34 +319,43 @@ class DriverData:
                 registry_name=registry_key, registry_code=registry_idx,
                 time_step=time_run, time_start=None, time_end=None)
 
-            # get point data and metrics
+            # get point data
             data_raw = point_data_collections[registry_key]['data']
 
-            # select point data and metrics
-            data_selected = configure_time_series_info(data_raw, fields=self.dset_obj_dst_file['fields'])
+            # check data availability
+            if data_raw is not None:
 
-            # view point time-series
-            if file_format_dst == 'jpeg' or file_format_dst == 'jpg':
+                # select point data
+                data_selected = configure_time_series_info(data_raw, fields=self.dset_obj_dst_file['fields'])
 
-                # create figure
-                view_time_series(file_path_dst_def,
-                                 ts_data=data_selected, ts_name=registry_key,
-                                 ts_registry=registry_fields,
-                                 fig_title=fig_title,
-                                 fig_legend=fig_legend, fig_style=fig_style,
-                                 fig_label_axis_sm_x=fig_label_x_sm_tag, fig_label_axis_sm_y=fig_label_y_sm_tag,
-                                 fig_label_axis_rain_x=fig_label_x_rain_tag, fig_label_axis_rain_y=fig_label_y_rain_tag,
-                                 fig_dpi=150)
+                # view point time-series
+                if file_format_dst == 'jpeg' or file_format_dst == 'jpg':
+
+                    # create figure
+                    view_time_series(file_path_dst_def,
+                                     ts_data=data_selected, ts_name=registry_key,
+                                     ts_registry=registry_fields,
+                                     fig_title=fig_title,
+                                     fig_legend=fig_legend, fig_style=fig_style,
+                                     fig_label_axis_sm_x=fig_label_x_sm_tag,
+                                     fig_label_axis_sm_y=fig_label_y_sm_tag,
+                                     fig_label_axis_rain_x=fig_label_x_rain_tag,
+                                     fig_label_axis_rain_y=fig_label_y_rain_tag,
+                                     fig_dpi=150)
+
+                else:
+                    log_stream.error(' ===> Destination data type "' + file_format_dst + '" is not supported.')
+                    raise NotImplemented('Case not implemented yet')
+
+                # point info end
+                log_stream.info(' -----> Registry "' + registry_key + '" ... DONE')
 
             else:
-                log_stream.error(' ===> Destination data type "' + file_format_dst + '" is not supported.')
-                raise NotImplemented('Case not implemented yet')
-
-            # point info end
-            log_stream.info(' -----> Registry "' + registry_key + '" ... DONE')
+                # point info end
+                log_stream.info(' -----> Registry "' + registry_key + '" ... SKIPPED. Data not available')
 
         # method end info
-        log_stream.info(' ----> View time-series object(s) ... DONE.')
+        log_stream.info(' ----> View time-series object(s) [' + time_str + '] ... DONE.')
 
     # -------------------------------------------------------------------------------------
 
@@ -358,7 +364,8 @@ class DriverData:
     def organize_data(self):
 
         # method start info
-        log_stream.info(' ----> Organize time-series object(s) ... ')
+        time_str = self.time_run.strftime('%Y-%d-%m')
+        log_stream.info(' ----> Organize time-series object(s) [' + time_str + ']... ')
 
         # get time(s)
         time_run = self.time_run
@@ -438,7 +445,7 @@ class DriverData:
                         raise NotImplemented('Case not implemented yet')
 
                 else:
-                    log_stream.warning(' ===> Datasets file "' + file_path_src_data_point + '" was not available.')
+                    log_stream.warning(' ===> Datasets file "' + file_path_src_def + '" was not available.')
                     data_converted = None
 
                 # get data end
@@ -461,7 +468,7 @@ class DriverData:
 
                 else:
                     # dump data end
-                    data_obj = None
+                    data_obj = {'data': None}
                     log_stream.info(' ------> Dump datasets ... SKIPPED. Datasets is not available')
 
                 # point info end
@@ -476,7 +483,7 @@ class DriverData:
             obj_data_collections[registry_key] = data_obj
 
         # method end info
-        log_stream.info(' ----> Organize time-series object(s) ... DONE')
+        log_stream.info(' ----> Organize time-series object(s) [' + time_str + '] ... DONE')
 
         return obj_data_collections
 

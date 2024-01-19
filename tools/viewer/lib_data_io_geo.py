@@ -126,7 +126,8 @@ def read_grid_data(file_name, output_format='data_array', output_dtype='float32'
         data = dset.read()
 
         if dset.crs is None:
-            crs = CRS.from_string(var_proj)
+            crs = 'EPSG:4326'
+            # crs = CRS.from_string(var_proj) bug in rasterio (check how to solve it)
         else:
             crs = dset.crs
 

@@ -336,6 +336,7 @@ def view_time_series(file_name, ts_data, ts_registry, ts_name='',
 
     ax3.grid(b=True)
 
+    '''
     ax9 = ax3.twinx()
     p9_1 = ax9.plot(np.arange(len(tick_time_labels)), list(ts_level.values[:, 0]),
                     label=label_level[0], **style_level_obs)
@@ -348,9 +349,12 @@ def view_time_series(file_name, ts_data, ts_registry, ts_name='',
     ax9.set_ylim(min_ts_level, max_ts_level)
 
     ax9.set_xticks(np.arange(arr_event.shape[1] + 1) - .5, minor=True)
-
+    
     leg3 = ax3.legend((p3_1[0], p3_2[0], p9_1[0], p9_2[0]),
                       (label_event[0], label_event[1], label_level[0], label_level[1]), frameon=False, loc=2)
+    '''
+    leg3 = ax3.legend((p3_1[0], p3_2[0]),
+                      (label_event[0], label_event[1]), frameon=False, loc=2)
     ax3.add_artist(leg3)
 
     # set title

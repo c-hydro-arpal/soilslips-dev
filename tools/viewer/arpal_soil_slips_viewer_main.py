@@ -15,7 +15,7 @@ Version(s):
 """
 
 # -------------------------------------------------------------------------------------
-# Complete library
+# libraries
 import logging
 import time
 import os
@@ -30,7 +30,7 @@ from lib_utils_time import set_time
 from lib_utils_logging import set_logging_file
 from lib_info_args import logger_name, time_format_algorithm
 
-# Logging
+# logging
 log_stream = logging.getLogger(logger_name)
 # -------------------------------------------------------------------------------------
 
@@ -41,13 +41,13 @@ alg_name = 'SOIL SLIPS VIEWER TOOL'
 alg_type = 'Package'
 alg_version = '1.0.0'
 alg_release = '2024-01-12'
-# Algorithm parameter(s)
+# algorithm parameter(s)
 time_format = '%Y-%m-%d %H:%M'
 # -------------------------------------------------------------------------------------
 
 
 # -------------------------------------------------------------------------------------
-# Script Main
+# main
 def main():
 
     # -------------------------------------------------------------------------------------
@@ -64,18 +64,18 @@ def main():
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
-    # Info algorithm
+    # info algorithm start message
     log_stream.info(' ============================================================================ ')
     log_stream.info(' ==> ' + alg_name + ' (Version: ' + alg_version + ' Release_Date: ' + alg_release + ')')
     log_stream.info(' ==> START ... ')
     log_stream.info(' ')
 
-    # Time algorithm information
+    # info algorithm time
     start_time = time.time()
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
-    # Organize time run
+    # method to organize time
     time_run, time_range = set_time(
         time_ref_args=alg_time,
         time_ref_file=data_settings['time']['time_reference'],
@@ -97,29 +97,34 @@ def main():
         template_dict=data_settings['algorithm']['template'],
         info_dict=data_settings['algorithm']['info'],
         flags_dict=data_settings['algorithm']['flags'])
+    # method to organize data
     data_static_collection = driver_data_static.organize_data()
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
-    # source datasets
-    driver_data_dynamic = DriverData_Dynamic(
-        time_run=time_run, time_range=time_range,
-        static_obj=data_static_collection,
-        source_dict=data_settings['data']['dynamic']['source'],
-        ancillary_dict=data_settings['data']['dynamic']['ancillary'],
-        destination_dict=data_settings['data']['dynamic']['destination'],
-        template_dict=data_settings['algorithm']['template'],
-        info_dict=data_settings['algorithm']['info'],
-        flags_dict=data_settings['algorithm']['flags'],
-        tmp_dict=data_settings['tmp'])
-    # method to organize data
-    data_source_collection = driver_data_dynamic.organize_data()
-    # method to view data
-    driver_data_dynamic.view_data(data_source_collection)
+    # iterate over time steps
+    for time_step in time_range:
+
+        # -------------------------------------------------------------------------------------
+        # dynamic datasets
+        driver_data_dynamic = DriverData_Dynamic(
+            time_run=time_step,
+            static_obj=data_static_collection,
+            source_dict=data_settings['data']['dynamic']['source'],
+            ancillary_dict=data_settings['data']['dynamic']['ancillary'],
+            destination_dict=data_settings['data']['dynamic']['destination'],
+            template_dict=data_settings['algorithm']['template'],
+            info_dict=data_settings['algorithm']['info'],
+            flags_dict=data_settings['algorithm']['flags'],
+            tmp_dict=data_settings['tmp'])
+        # method to organize data
+        data_source_collection = driver_data_dynamic.organize_data()
+        # method to view data
+        driver_data_dynamic.view_data(data_source_collection)
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
-    # Info algorithm
+    # # info algorithm end message
     time_elapsed = round(time.time() - start_time, 1)
 
     log_stream.info(' ')
@@ -134,7 +139,7 @@ def main():
 
 
 # -------------------------------------------------------------------------------------
-# Method to get script argument(s)
+# method to get script argument(s)
 def get_args():
     parser_handle = ArgumentParser()
     parser_handle.add_argument('-settings_file', action="store", dest="alg_settings")
@@ -153,7 +158,7 @@ def get_args():
 
 
 # ----------------------------------------------------------------------------
-# Call script from external library
+# call main
 if __name__ == '__main__':
     main()
 # ----------------------------------------------------------------------------
