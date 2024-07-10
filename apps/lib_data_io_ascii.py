@@ -38,10 +38,16 @@ def read_file_raster(file_name, output_format='data_array', output_dtype='float3
         transform = dset.transform
         data = dset.read()
 
-        if dset.crs is None:
-            crs = CRS.from_string(var_proj)
-        else:
-            crs = dset.crs
+        # manage crs import
+        crs = None
+        try:
+            if dset.crs is None:
+                crs = CRS.from_string(var_proj)
+            else:
+                crs = dset.crs
+        except BaseException as base_exp:
+            log_stream.warning(' ===> CRS not set due to unknown reason "' + str(base_exp) + '"')
+            log_stream.warning(' ===> GDAL_DATA folder must be defined from the reference conda environment')
 
         if output_dtype == 'float32':
             values = np.float32(data[0, :, :])

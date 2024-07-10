@@ -13,12 +13,15 @@ import logging
 import rasterio
 import gdal
 import osr
+import numpy as np
 
+from copy import deepcopy
 from rasterio.transform import Affine
 from osgeo import ogr, gdal, gdalconst
 
 from lib_info_args import proj_wkt as proj_default_wkt
 from lib_info_args import logger_name_predictors as logger_name
+from lib_info_args import proj_epsg as proj_default_epsg
 
 # Logging
 logging.getLogger('rasterio').setLevel(logging.WARNING)
@@ -27,6 +30,34 @@ log_stream = logging.getLogger(logger_name)
 # Debug
 # import matplotlib.pylab as plt
 #######################################################################################
+
+
+# -------------------------------------------------------------------------------------
+# method to define file tiff metadata
+def organize_file_tiff(file_data, file_geo_x, file_geo_y, file_geo_transform=None, file_geo_epsg=None):
+
+    file_height, file_width = file_data.shape
+
+    file_geo_x_west = np.min(np.min(file_geo_x))
+    file_geo_x_east = np.max(np.max(file_geo_x))
+
+    file_geo_y_south = np.min(np.min(file_geo_y))
+    file_geo_y_north = np.max(np.max(file_geo_y))
+
+    if file_geo_transform is None:
+        # TO DO: fix the 1/2 pixel of resolution in x and y ... using resolution/2
+        file_geo_transform = rasterio.transform.from_bounds(
+            file_geo_x_west, file_geo_y_south, file_geo_x_east, file_geo_y_north,
+            file_width, file_height)
+
+    if file_geo_epsg is None:
+        file_geo_epsg = deepcopy(proj_default_epsg)
+
+    if not isinstance(file_geo_epsg, str):
+        file_geo_epsg = file_geo_epsg.to_string()
+
+    return file_height, file_width, file_geo_transform, file_geo_epsg
+# -------------------------------------------------------------------------------------
 
 
 # -------------------------------------------------------------------------------------

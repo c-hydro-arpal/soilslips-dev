@@ -12,6 +12,8 @@ Version:       '1.0.0'
 import logging
 import os
 
+from copy import deepcopy
+
 from lib_data_io_pickle import read_obj, write_obj
 from lib_utils_system import make_folder
 from lib_utils_io_obj import filter_obj_variables, filter_obj_datasets
@@ -57,7 +59,8 @@ class DriverGeoPoint:
         self.structure_group_tag_index_dst = 'event_index'
         self.structure_group_tag_features_dst = 'event_features'
 
-        self.column_db_tag_alert_area = 'ZONA_ALLER'
+        self.column_db_list_alert_area = ['ZONA_ALLER', 'ALLERTA']
+        self.column_db_tag_alert_area = None
         self.column_db_tag_time = 'DATA'
         self.column_db_point_code_tag = 'id_frana'
         self.column_db_point_name_tag = 'id_frana'
@@ -121,6 +124,15 @@ class DriverGeoPoint:
 
             # read the soil-slips collections
             obj_point_registry = read_point_file(file_path_src)
+
+            # set alert_area tag [ZONA_ALLER, ALLERTA]
+            for column_db_tmp_alert_area in self.column_db_list_alert_area:
+                if column_db_tmp_alert_area in obj_point_registry.columns:
+                    self.column_db_tag_alert_area = deepcopy(column_db_tmp_alert_area)
+                    break
+            if self.column_db_tag_alert_area is None:
+                log_stream.error(' ===> Alert area tag not found in soil slips data')
+                raise IOError('Alert area tag could be defined with a mismatching tag name')
 
             # fill the soil-slips collections
             obj_point_registry = join_point_and_grid(

@@ -11,8 +11,8 @@
     "flags": {
       "__comment__": "running_mode values: organizer, analyzer, publisher",
       "running_mode": ["organizer","analyzer","publisher"],
-      "updating_static_ancillary_grid": true,
-      "updating_static_ancillary_point_weather_stations": true,
+      "updating_static_ancillary_grid": false,
+      "updating_static_ancillary_point_weather_stations": false,
       "updating_static_ancillary_point_soil_slips": true,
       "updating_dynamic_ancillary_rain": true,
       "updating_dynamic_ancillary_sm": true,
@@ -20,6 +20,7 @@
       "updating_dynamic_destination_scenarios": true
     },
     "dependencies": {
+      "__comment__": "GDAL_DATA must be defined from the reference conda environment",
       "LD_LIBRARY_PATH" : [
         "/home/fabio/Documents/Work_Area/Code_Development/Library/gdal-3.2.1/lib/",
         "/home/fabio/Documents/Work_Area/Code_Development/Library/proj-8.0.0/lib/"
@@ -29,6 +30,7 @@
         "/home/fabio/Documents/Work_Area/Code_Development/Library/proj-8.0.0/bin/"
       ],
       "GDAL_DATA_SCRIPT": "/home/fabio/Documents/Work_Area/Code_Development/Library/gdal-3.2.1/share/gdal/",
+      "GDAL_DATA": "/home/fabio/Desktop/PyCharm_ARPAL/conda_p37/envs/soilslips_libraries/share/gdal/",
       "PROJ_LIB": "/home/fabio/Desktop/Library/proj-8.0.0/share/proj/"
     },
     "ancillary": {
@@ -153,7 +155,7 @@
         "soil_slips" : {
           "database_data" : {
             "folder_name": "/home/fabio/Desktop/PyCharm_ARPAL/soilslips-ws/data_static/db_soil_slips/",
-            "file_name": "Catasto_Frane_Luglio2020.shp"
+            "file_name": "Catasto_Frane_2014_2023.shp"
           }
         },
         "geo": {
@@ -352,11 +354,11 @@
     "file_name": "soil_slips_scenarios_realtime_log.txt"
   },
   "time": {
-    "time_now": null,
-    "time_period": 3000,
+    "time_now": "2023-01-15 23:45",
+    "time_period": 4,
     "time_frequency": "D",
     "time_rounding": "D",
-    "time_start": "2022-05-02 03:23",
-    "time_end": "2022-05-02 09:42"
+    "time_start": null,
+    "time_end": null
   }
 }

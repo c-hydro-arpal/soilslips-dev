@@ -77,7 +77,7 @@ def main():
         logger_file=os.path.join(data_settings['log']['folder_name'], data_settings['log']['file_name']))
 
     # Set algorithm library dependencies
-    set_deps(data_settings['algorithm']['dependencies'], env_extra=['PROJ_LIB', 'GDAL_DATA_SCRIPT'])
+    set_deps(data_settings['algorithm']['dependencies'], env_extra=['PROJ_LIB', 'GDAL_DATA_SCRIPT', 'GDAL_DATA'])
     # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------
@@ -145,21 +145,6 @@ def main():
         # Iterate over time(s)
         for time_step in time_range:
 
-            # Soil moisture datasets
-            driver_forcing_sm = DriverForcingSM(
-                time_step,
-                src_dict=data_settings['data']['dynamic']['source'],
-                anc_dict=data_settings['data']['dynamic']['ancillary'],
-                dst_dict=data_settings['data']['dynamic']['destination'],
-                tmp_dict=data_settings['tmp'],
-                time_data=data_settings['data']['dynamic']['time'],
-                collections_data_geo=geo_grid_collection,
-                collections_data_group=data_settings['algorithm']['ancillary']['group'],
-                alg_template_tags=data_settings['algorithm']['template'],
-                flag_ancillary_updating=data_settings['algorithm']['flags']['updating_dynamic_ancillary_sm'])
-            if activate_algorithm_step(['organizer'], data_settings['algorithm']['flags']['running_mode']):
-                driver_forcing_sm.organize_forcing()
-
             # Rain datasets
             driver_forcing_rain = DriverForcingRain(
                 time_step,
@@ -175,6 +160,21 @@ def main():
                 flag_ancillary_updating=data_settings['algorithm']['flags']['updating_dynamic_ancillary_rain'])
             if activate_algorithm_step(['organizer'], data_settings['algorithm']['flags']['running_mode']):
                 driver_forcing_rain.organize_forcing()
+
+            # Soil moisture datasets
+            driver_forcing_sm = DriverForcingSM(
+                time_step,
+                src_dict=data_settings['data']['dynamic']['source'],
+                anc_dict=data_settings['data']['dynamic']['ancillary'],
+                dst_dict=data_settings['data']['dynamic']['destination'],
+                tmp_dict=data_settings['tmp'],
+                time_data=data_settings['data']['dynamic']['time'],
+                collections_data_geo=geo_grid_collection,
+                collections_data_group=data_settings['algorithm']['ancillary']['group'],
+                alg_template_tags=data_settings['algorithm']['template'],
+                flag_ancillary_updating=data_settings['algorithm']['flags']['updating_dynamic_ancillary_sm'])
+            if activate_algorithm_step(['organizer'], data_settings['algorithm']['flags']['running_mode']):
+                driver_forcing_sm.organize_forcing()
 
             # Analysis datasets to define indicators
             driver_analysis_indicators = DriverAnalysisIndicators(
@@ -279,6 +279,13 @@ def set_deps(algorithm_deps, env_ld_library='LD_LIBRARY_PATH', env_path='PATH', 
             env_value = algorithm_deps[env_name]
             if env_value is not None:
                 os.environ[env_name] = env_value
+
+    # check GDAL DATA (check to avoid errors in load a gldal_data in the conda environment)
+    if 'GDAL_DATA' in os.environ:
+        gdal_folder = os.environ['GDAL_DATA']
+        log_stream.info(' ===> GDAL_DATA SET: "' + gdal_folder + '"')
+    else:
+        log_stream.info(' ===> GDAL_DATA NOT SET')
 # -------------------------------------------------------------------------------------
 
 

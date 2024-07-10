@@ -57,6 +57,7 @@ def get_data_tiff(file_name, file_mandatory=True):
             transform = dset.transform
             data = dset.read()
             values = data[0, :, :]
+
             if dset.crs is None:
                 proj = proj_default_wkt
             else:
@@ -465,21 +466,33 @@ def reproject_rain_source2map(da_var_in, da_mask_out, da_geo_x_out, da_geo_y_out
 
         data_out_2d = interp_grid2map(geox_in_2d, geoy_in_2d, data_in_2d,
                                       geox_out_2d, geoy_out_2d,
-                                      nodata=-9999, interp_method='nearest',
-                                      index_out=interp_index)
+                                      interp_method='nearest',
+                                      interpolating_max_distance=10000,
+                                      interpolating_fill_value=0)
+
+        tmp_out_2d = deepcopy(data_out_2d)
         if mask_out_condition:
             data_out_2d[mask_out_2d == 0] = np.nan
 
         obj_var_out = deepcopy(data_out_2d)
 
         # Debug
-        # plt.figure()
-        # plt.imshow(data_in_2d)
-        # plt.colorbar()
-        # plt.figure()
-        # plt.imshow(data_out_2d)
-        # plt.colorbar()
-        # plt.show()
+        plt.figure()
+        plt.imshow(mask_out_2d)
+        plt.colorbar()
+        plt.figure()
+        plt.imshow(data_in_2d)
+        plt.colorbar()
+        plt.figure()
+        plt.imshow(data_out_2d)
+        plt.colorbar()
+        plt.show()
+        plt.figure()
+        plt.imshow(tmp_out_2d)
+        plt.colorbar()
+        plt.show()
+
+        print()
 
     else:
         log_stream.error(' ===> Reproject method "' + interp_mode + '" is not supported.')

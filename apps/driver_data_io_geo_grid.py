@@ -588,7 +588,7 @@ class DriverGeoGrid:
 
                     else:
                         log_stream.warning(' ===> Region data file ' + data_file_path_src + ' is not available')
-                        index_data_2d = None
+                        index_data_1d = None
 
                     dset_obj[step_name_dst] = {}
                     dset_obj[step_name_dst] = index_data_1d

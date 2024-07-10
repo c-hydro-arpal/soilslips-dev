@@ -2,6 +2,14 @@
 Changelog
 =========
 
+Version 2.4.0 [2024-07-10]
+**************************
+- PROJECT: Operational release
+- TOOL: arpal_soil_slips_scenarios_main.py
+	- Fix bugs in regridding rain maps (pyresample algorithm)
+	- Fix bugs in read ascii grid data (error of epsg code not available in the coordinates system db)
+	- Add GDAL_DATA in mandatory algorithm dependencies
+
 Version 2.3.0 [2024-01-16]
 **************************
 - PROJECT: Operational release
