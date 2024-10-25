@@ -402,6 +402,7 @@ class DriverAnalysis:
                                 if da_in_2d is not None:
                                     data_in_2d = da_in_2d.values
                                     data_in_2d[mask_out_2d == 0] = np.nan
+
                                     data_in_3d[:, :, file_id] = data_in_2d
                                     data_time.append(time_stamp_step)
 
@@ -569,7 +570,9 @@ class DriverAnalysis:
                     var_da_obj = var_dset_obj[var_name]
 
                     # Compute maps values
-                    var_da_maps = reproject_rain_source2map(var_da_obj, mask_out_da, geo_x_out_da, geo_y_out_da)
+                    var_da_maps = reproject_rain_source2map(
+                        var_da_obj, mask_out_da, geo_x_out_da, geo_y_out_da, mask_out_condition=True)
+
                     # Compute time-series values
                     var_ts_datasets = reproject_rain_map2ts(var_da_maps, column_name=self.template_struct_ts_datasets)
 
@@ -581,8 +584,10 @@ class DriverAnalysis:
                         # Compute maps accumulated values and peaks
                         log_stream.info(' -------> Rain peaks ... ')
                         tag_ts_series_peaks = self.template_rain_ts_peak.format(time_window)
+
                         var_map_accumulated = compute_rain_maps_accumulated(
                             var_da_maps, time_window=time_window, time_direction='right')
+
                         var_value_peak, var_dframe_peaks = compute_rain_peaks(
                             var_map_accumulated, data_geo_reference_idx_circle)
                         var_ts_peaks[tag_ts_series_peaks] = var_dframe_peaks

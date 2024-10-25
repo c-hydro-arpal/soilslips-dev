@@ -126,7 +126,6 @@ def main():
         source_datasets = driver_analysis_predictors.organize_analysis()
         analysis_datasets = driver_analysis_predictors.compute_analysis(source_datasets)
         driver_analysis_predictors.dump_analysis(analysis_datasets)
-
         # -------------------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------------------

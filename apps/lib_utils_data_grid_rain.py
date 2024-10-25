@@ -212,10 +212,12 @@ def compute_rain_maps_accumulated(var_da_source,  coord_name_time='time', time_w
 
     if time_direction == 'left':
         var_da_sorted = var_da_source.sortby(time_coords, ascending=False)
-        var_da_resampled = var_da_sorted.resample(time=time_window, label='right', closed='right').sum(coord_name_time)
+        # var_da_test = var_da_sorted.resample(time=time_window, label='right', closed='right').sum(coord_name_time)
+        var_da_resampled = var_da_sorted.rolling(time=time_period, center=False).sum()
     elif time_direction == 'right':
         var_da_sorted = var_da_source.sortby(time_coords, ascending=True)
-        var_da_resampled = var_da_sorted.resample(time=time_window, label='right', closed='right').sum(coord_name_time)
+        # var_da_test = var_da_sorted.resample(time=time_window, label='right', closed='right').sum(coord_name_time)
+        var_da_resampled = var_da_sorted.rolling(time=time_period, center=False).sum()
     else:
         log_stream.error(' ===> Time direction "' + time_direction + '" flag is not allowed')
         raise IOError('Available flags for temporal direction are: "right" and "left"')
@@ -243,10 +245,17 @@ def compute_rain_ts_averaged(dframe_var, column_name=None,
     if isinstance(column_name, list):
         column_name = column_name[0]
 
+    time_period, time_frequency = split_time_window(time_window)
+
     if time_inverse:
-        series_var = dframe_var[column_name].resample(time_window, label=time_direction).mean()[:-1]
+        # series_var = dframe_var[column_name].resample(time_window, label=time_direction).mean()[:-1]
+        series_var = dframe_var[column_name].rolling(time_period, center=False).mean()[::-1]
     else:
-        series_var = dframe_var[column_name].resample(time_window, label=time_direction).mean()
+        # series_var = dframe_var[column_name].resample(time_window, label=time_direction).mean()
+        series_var = dframe_var[column_name].rolling(time_period, center=False).mean()
+
+    series_var = series_var.dropna(how='all')
+
     return series_var
 # -------------------------------------------------------------------------------------
 
@@ -260,10 +269,17 @@ def compute_rain_ts_accumulated(dframe_var, column_name=None,
     if isinstance(column_name, list):
         column_name = column_name[0]
 
+    time_period, time_frequency = split_time_window(time_window)
+
     if time_inverse:
-        series_var = dframe_var[column_name].resample(time_window, label=time_direction).sum()[:-1]
+        # series_var = dframe_var[column_name].resample(time_window, label=time_direction).sum()[:-1]
+        series_var = dframe_var[column_name].rolling(time_period, center=False).sum()[::-1]
     else:
-        series_var = dframe_var[column_name].resample(time_window, label=time_direction).sum()
+        # series_var = dframe_var[column_name].resample(time_window, label=time_direction).sum()
+        series_var = dframe_var[column_name].rolling(time_period, center=False).sum()
+
+    series_var = series_var.dropna(how='all')
+
     return series_var
 # -------------------------------------------------------------------------------------
 
@@ -313,7 +329,7 @@ def compute_rain_peaks(var_da, var_point_collections, var_analysis='max'):
         for point_key, point_idxs in var_point_collections.items():
             var_data_1d = var_data_2d[point_idxs]
 
-            value_max, value_avg = np.max(var_data_1d), np.mean(var_data_1d)
+            value_max, value_avg = np.nanmax(var_data_1d), np.nanmean(var_data_1d)
 
             if point_key not in list(obj_point_collections.keys()):
                 obj_point_collections[point_key] = [value_max]
@@ -325,6 +341,7 @@ def compute_rain_peaks(var_da, var_point_collections, var_analysis='max'):
         obj_point_time_stamp.append(time_stamp_step)
 
     peaks_dframe = pd.DataFrame(index=obj_point_time_stamp, data=obj_point_collections)
+    peaks_dframe = peaks_dframe.dropna(how='all')
 
     peaks_max = peaks_dframe.to_numpy().max()
 
@@ -436,20 +453,21 @@ def reproject_rain_source2map(da_var_in, da_mask_out, da_geo_x_out, da_geo_y_out
 
         obj_var_out = deepcopy(da_var_out)
 
-        # Debug
-        # plt.figure()
-        # plt.imshow(da_var_in.values[:, :, 1])
-        # plt.colorbar()
-        # plt.figure()
-        # plt.imshow(da_var_tmp.values[:, :, 1])
-        # plt.colorbar()
-        # plt.figure()
-        # plt.imshow(da_var_interp.values[:, :, 1])
-        # plt.colorbar()
-        # plt.figure()
-        # plt.imshow(da_var_out.values[:, :, 1])
-        # plt.colorbar()
-        # plt.show()
+        ''' Debug
+        plt.figure()
+        plt.imshow(da_var_in.values[:, :, 0])
+        plt.colorbar()
+        plt.figure()
+        plt.imshow(da_var_tmp.values[:, :, 0])
+        plt.colorbar()
+        plt.figure()
+        plt.imshow(da_var_interp.values[:, :, 0])
+        plt.colorbar()
+        plt.figure()
+        plt.imshow(da_var_out.values[:, :, 0])
+        plt.colorbar()
+        plt.show()
+        '''
 
     elif interp_mode == 'numpy':
 
@@ -475,24 +493,6 @@ def reproject_rain_source2map(da_var_in, da_mask_out, da_geo_x_out, da_geo_y_out
             data_out_2d[mask_out_2d == 0] = np.nan
 
         obj_var_out = deepcopy(data_out_2d)
-
-        # Debug
-        plt.figure()
-        plt.imshow(mask_out_2d)
-        plt.colorbar()
-        plt.figure()
-        plt.imshow(data_in_2d)
-        plt.colorbar()
-        plt.figure()
-        plt.imshow(data_out_2d)
-        plt.colorbar()
-        plt.show()
-        plt.figure()
-        plt.imshow(tmp_out_2d)
-        plt.colorbar()
-        plt.show()
-
-        print()
 
     else:
         log_stream.error(' ===> Reproject method "' + interp_mode + '" is not supported.')

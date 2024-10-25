@@ -123,34 +123,85 @@ class DriverForcing:
     # Method to collect time(s)
     def collect_file_time(self):
 
+        # get generic variable features
         time_period = self.time_data["time_period"]
         time_frequency = self.time_data["time_frequency"]
         time_rounding = self.time_data["time_rounding"]
 
-        if time_period < self.time_period_max:
-            log_stream.warning(' ===> Obj "time_period" is less then "time_period_max". '
-                               'Set "time_period" == "time_period_max"')
-            time_period = self.time_period_max
-        if time_frequency != self.time_frequency_max:
-            log_stream.error(' ===> Obj "time_frequency" is not equal to "time_frequency_max".')
+        # case of time period
+        if isinstance(self.time_period_max, (float, int)):
+            if time_period < self.time_period_max:
+                log_stream.warning(' ===> Obj "time_period" is less then "time_period_max". '
+                                   'Set "time_period" == "time_period_max"')
+                time_period = self.time_period_max
+        elif isinstance(self.time_period_max, list):
+
+            time_period_max = np.max(np.asarray(self.time_period_max))
+
+            if time_period < time_period_max:
+                log_stream.warning(' ===> Obj "time_period" is less then "time_period_max". '
+                                   'Set "time_period" == "time_period_max"')
+                time_period = time_period_max
+
+        else:
+            log_stream.error(' ===> Obj "time_period" format is not expected.')
             raise NotImplementedError('Case not implemented yet')
 
-        time_step = self.time_step.floor(time_rounding)
-        time_start_left = pd.date_range(start=time_step, periods=2, freq=time_frequency)[1]
-        time_end_right = time_step
+        # case of time frequency
+        if isinstance(self.time_frequency_max, str):
+            if time_frequency != self.time_frequency_max:
+                log_stream.error(' ===> Obj "time_frequency" is not equal to "time_frequency_max".')
+                raise NotImplementedError('Case not implemented yet')
+        elif isinstance(self.time_frequency_max, list):
+            for time_frequency_step in self.time_frequency_max:
+                if time_frequency != time_frequency_step:
+                    log_stream.error(' ===> Obj "time_frequency" is not equal to "time_frequency_max" in all cases.')
+                    raise NotImplementedError('Case not implemented yet')
+        else:
+            log_stream.error(' ===> Obj "time_frequency" format is not expected.')
+            raise NotImplementedError('Case not implemented yet')
 
+        # time step, time_step_left, time_step_right information
+        time_step = self.time_step.floor(time_rounding)
+        time_step_left = time_step
+        time_step_right = pd.date_range(start=time_step, periods=2, freq=time_frequency)[1]
+        # search type information (left, right, both, [left, right], [right, left])
         search_type = self.time_period_type
+
+        # case 'left' -> time range from time_start_left
         if search_type == 'left':
-            time_range = pd.date_range(start=time_start_left, periods=time_period, freq=time_frequency)
+            time_range = pd.date_range(end=time_step_left, periods=time_period, freq=time_frequency)
+
+        # case 'right' -> time range from time_end_right
         elif search_type == 'right':
-            time_range = pd.date_range(end=time_end_right, periods=time_period, freq=time_frequency)
+            time_range = pd.date_range(start=time_step_right, periods=time_period, freq=time_frequency)
+
+        # case 'both' -> time range from time_start_left and time_end_right (same length)
         elif search_type == 'both':
-            time_range_left = pd.date_range(start=time_start_left, periods=time_period, freq=time_frequency)
-            time_range_right = pd.date_range(end=time_end_right, periods=time_period, freq=time_frequency)
-            time_range = time_range_right.union(time_range_left)
+            time_range_left = pd.date_range(end=time_step_left, periods=time_period, freq=time_frequency)
+            time_range_right = pd.date_range(start=time_step_right, periods=time_period, freq=time_frequency)
+            time_range = time_range_left.union(time_range_right)
+
+        # case 'left' and 'right' -> time range from time_step_left and time_step_right (different length)
+        elif search_type == ['left', 'right']:
+            time_period_left, time_period_right = self.time_period_max[0], self.time_period_max[1]
+            time_frequency_left, time_frequency_right = self.time_frequency_max[0], self.time_frequency_max[1]
+            time_range_left = pd.date_range(end=time_step_left, periods=time_period_left, freq=time_frequency_left)
+            time_range_right = pd.date_range(start=time_step_right, periods=time_period_right, freq=time_frequency_right)
+            time_range = time_range_left.union(time_range_right)
+
+        # case 'right' and 'left' -> time range from time_step_left and time_step_right (different length)
+        elif search_type == ['right', 'left']:
+            time_period_left, time_period_right = self.time_period_max[1], self.time_period_max[0]
+            time_frequency_left, time_frequency_right = self.time_frequency_max[1], self.time_frequency_max[0]
+            time_range_left = pd.date_range(end=time_step_left, periods=time_period_left, freq=time_frequency_left)
+            time_range_right = pd.date_range(start=time_step_left, periods=time_period_right, freq=time_frequency_right)
+            time_range = time_range_left.union(time_range_right)
+
         else:
             log_stream.error(' ===> Obj "search_type" for "time_range" selection is not allowed')
-            raise RuntimeError('Obj "search_type" must be equal to "left", "right" or "both"')
+            raise RuntimeError('Obj "search_type" must be equal to "left", "right", "both", '
+                               '["left", "right"] or ["right", "left"]')
 
         return time_range
     # -------------------------------------------------------------------------------------

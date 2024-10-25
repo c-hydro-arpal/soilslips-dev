@@ -2,6 +2,14 @@
 Changelog
 =========
 
+Version 2.5.0 [2024-10-10]
+**************************
+- PROJECT: Operational release
+- TOOL: arpal_soil_slips_scenarios_main.py
+	- Fix bugs in time selection (rain and soil moisture variables) 
+	- Fix bugs in computing indicators (rain and soil moisture variables)
+	- Add left and right selection period (rain and soil moisture variables)
+
 Version 2.4.0 [2024-07-10]
 **************************
 - PROJECT: Operational release
